@@ -1,0 +1,27 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    unnecessary_dev_dependency: ignore
+    unused_element: ignore
+    unused_field: ignore
+    deprecated_field: ignore
+    unnecessary_import: ignore
+    unused_element_parameter: ignore
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options
+linter:
+  rules:
+    prefer_final_fields: false
+    curly_braces_in_flow_control_structures: false
+    constant_identifier_names: false
+    use_string_in_part_of_directives: false
+    use_key_in_widget_constructors: false
+    unnecessary_this: false
+    prefer_conditional_assignment: false
+    prefer_const_constructors_in_immutables: false
+    provide_deprecation_message: false
+    annotate_overrides: false
+    unnecessary_new: false
+    avoid_print: false
+    

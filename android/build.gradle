@@ -1,0 +1,49 @@
+group 'com.tencent.vod.flutter'
+apply from:'config.gradle'
+apply plugin: 'com.android.library'
+version rootProject.ext.playerVersion
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.1.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        maven { url 'https://raw.githubusercontent.com/chenyuanyuan23/librarys/main' }
+        google()
+        mavenCentral()
+        // 私仓
+        flatDir {
+            dirs project(':').file('libs')
+        }
+    }
+}
+
+android {
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace="com.tencent.vod.flutter"
+
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    // implementation rootProject.ext.liteavSdk
+    implementation 'com.chenyuanyuan23:LiteAVSDK_Player:12.1.0.14886'
+    implementation rootProject.ext.compat
+}
