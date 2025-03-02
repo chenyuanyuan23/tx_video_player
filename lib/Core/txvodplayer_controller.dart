@@ -1,25 +1,35 @@
 // Copyright (c) 2022 Tencent. All rights reserved.
 part of SuperPlayer;
 
-final TXFlutterVodPlayerApi _vodPlayerApi = TXFlutterVodPlayerApi();
-
-class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TXPlayerValue?>, TXPlayerController {
+class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TXPlayerValue?>,
+    TXPlayerController, TXVodPlayerFlutterAPI {
   int? _playerId = -1;
   static String kTag = "TXVodPlayerController";
 
+  late TXFlutterVodPlayerApi _vodPlayerApi;
   final Completer<int> _initPlayer;
   final Completer<int> _createTexture;
-  bool get isInitialized {
-    return _initPlayer.isCompleted && _createTexture.isCompleted;
-  }
   bool _isDisposed = false;
   bool _isNeedDisposed = false;
   TXPlayerValue? _value;
   TXPlayerState? _state;
-
   TXPlayerState? get playState => _state;
-  StreamSubscription? _eventSubscription;
-  StreamSubscription? _netSubscription;
+
+  @override
+  get value => _value;
+
+  set value(TXPlayerValue? val) {
+    if (_value == val) return;
+    _value = val;
+    notifyListeners();
+  }
+
+  double? resizeVideoWidth = 0;
+  double? resizeVideoHeight = 0;
+  double? videoLeft = 0;
+  double? videoTop = 0;
+  double? videoRight = 0;
+  double? videoBottom = 0;
 
   final StreamController<TXPlayerState?> _stateStreamController = StreamController.broadcast();
   final StreamController<Map<dynamic, dynamic>> _eventStreamController = StreamController.broadcast();
@@ -53,103 +63,10 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
 
   Future<void> _create() async {
     _playerId = await SuperPlayerPlugin.createVodPlayer();
-    _eventSubscription = EventChannel("cloud.tencent.com/txvodplayer/event/$_playerId")
-        .receiveBroadcastStream("event")
-        .listen(_eventHandler, onError: _errorHandler);
-    _netSubscription = EventChannel("cloud.tencent.com/txvodplayer/net/$_playerId")
-        .receiveBroadcastStream("net")
-        .listen(_netHandler, onError: _errorHandler);
+    _vodPlayerApi = TXFlutterVodPlayerApi(messageChannelSuffix: _playerId.toString());
+    TXVodPlayerFlutterAPI.setUp(this, messageChannelSuffix: _playerId.toString());
     _initPlayer.complete(_playerId);
   }
-
-  /// event type:
-  ///
-  /// 事件类型:
-  /// see:https://cloud.tencent.com/document/product/454/7886#.E6.92.AD.E6.94.BE.E4.BA.8B.E4.BB.B6
-  _eventHandler(event) {
-    if (event == null) return;
-    final Map<dynamic, dynamic> map = event;
-    switch (map["event"]) {
-      case TXVodPlayEvent.PLAY_EVT_RTMP_STREAM_BEGIN:
-        break;
-      case TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME:
-        if (_isNeedDisposed) return;
-        _changeState(TXPlayerState.playing);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_BEGIN:
-        if (_isNeedDisposed) return;
-        _changeState(TXPlayerState.playing);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS: // Playback progress.
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_END:
-        _changeState(TXPlayerState.stopped);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_LOADING:
-        _changeState(TXPlayerState.buffering);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION: // Downstream video resolution change.
-        if (defaultTargetPlatform == TargetPlatform.android) {
-          int? videoWidth = event[TXVodPlayEvent.EVT_VIDEO_WIDTH];
-          int? videoHeight = event[TXVodPlayEvent.EVT_VIDEO_HEIGHT];
-          videoWidth ??= event[TXVodPlayEvent.EVT_PARAM1];
-          videoHeight ??= event[TXVodPlayEvent.EVT_PARAM2];
-          if ((videoWidth != null && videoWidth > 0) && (videoHeight != null && videoHeight > 0)) {
-            resizeVideoWidth = videoWidth.toDouble();
-            resizeVideoHeight = videoHeight.toDouble();
-            videoLeft = event["videoLeft"] ?? 0;
-            videoTop = event["videoTop"] ?? 0;
-            videoRight = event["videoRight"] ?? 0;
-            videoBottom = event["videoBottom"] ?? 0;
-          }
-        }
-        int videoDegree = map['EVT_KEY_VIDEO_ROTATION'] ?? 0;
-        if (Platform.isIOS && videoDegree == -1) {
-          videoDegree = 0;
-        }
-        value = _value!.copyWith(degree: videoDegree);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED: // VOD loading completed.
-        break;
-      case TXVodPlayEvent.PLAY_EVT_VOD_LOADING_END: // Loading ended
-        break;
-      case TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT:
-        _changeState(TXPlayerState.failed);
-        break;
-      case TXVodPlayEvent.PLAY_ERR_FILE_NOT_FOUND:
-        _changeState(TXPlayerState.failed);
-        break;
-      case TXVodPlayEvent.PLAY_ERR_HLS_KEY:
-        _changeState(TXPlayerState.failed);
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_RECONNECT:
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_DNS_FAIL:
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_SEVER_CONN_FAIL:
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_SHAKE_FAIL:
-        break;
-      case TXVodPlayEvent.EVENT_SUBTITLE_DATA:
-        String subtitleDataStr = map[TXVodPlayEvent.EXTRA_SUBTITLE_DATA] ?? "";
-        if (subtitleDataStr != "") {
-          map[TXVodPlayEvent.EXTRA_SUBTITLE_DATA] = subtitleDataStr.trim().replaceAll('\\N', '\n');
-        }
-        break;
-      default:
-        break;
-    }
-
-    _eventStreamController.add(map);
-  }
-
-  _netHandler(event) {
-    if (event == null) return;
-    final Map<dynamic, dynamic> map = event;
-    _netStatusStreamController.add(map);
-  }
-
-  _errorHandler(error) {}
 
   _changeState(TXPlayerState playerState) {
     value = _value!.copyWith(state: playerState);
@@ -180,6 +97,7 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
   /// @param url : 视频播放地址 video playback address
   /// return 是否播放成功 if play successfully
   Future<bool> startVodPlay(String url) async {
+    if (_isNeedDisposed) return false;
     await _initPlayer.future;
     await _createTexture.future;
     _changeState(TXPlayerState.buffering);
@@ -206,6 +124,7 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
   /// @params : see[TXPlayInfoParams]
   /// return 是否播放成功  if play successful
   Future<void> startVodPlayWithParams(TXPlayInfoParams params) async {
+    if (_isNeedDisposed) return;
     await _initPlayer.future;
     await _createTexture.future;
     _changeState(TXPlayerState.buffering);
@@ -215,6 +134,14 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
       ..appId = params.appId
       ..fileId = params.fileId
       ..psign = params.psign);
+  }
+
+  Future<void> startPlayDrm(TXPlayerDrmBuilder drmBuilder) async {
+    if (_isNeedDisposed) return;
+    await _initPlayer.future;
+    _changeState(TXPlayerState.buffering);
+    printVersionInfo();
+    await _vodPlayerApi.startPlayDrm(drmBuilder.toMsg());
   }
 
   /// The shared texture ID is a unique integer value that is used to identify a texture,
@@ -273,6 +200,7 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
   /// 视频是否处于正在播放中
   @override
   Future<bool> isPlaying() async {
+    if (_isNeedDisposed) return false;
     await _initPlayer.future;
     BoolMsg boolMsg = await _vodPlayerApi.isPlaying(PlayerMsg()..playerId = _playerId);
     return boolMsg.value ?? false;
@@ -505,13 +433,6 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
     return intMsg.value ?? 0;
   }
 
-  // 宽高比
-  Future<double> getAspectRatio() async {
-    if (_isNeedDisposed) return 0;
-    await _initPlayer.future;
-    return await getWidth() / await getHeight();
-  }
-
   /// Set the token for playing the video.
   ///
   /// 设置播放视频的token
@@ -730,11 +651,6 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
   Future<void> dispose() async {
     _isNeedDisposed = true;
     if (!_isDisposed) {
-      await _eventSubscription?.cancel();
-      _eventSubscription = null;
-      await _netSubscription?.cancel();
-      _netSubscription = null;
-
       await _release();
       _changeState(TXPlayerState.disposed);
       _isDisposed = true;
@@ -752,18 +668,88 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
   }
 
   @override
-  get value => _value;
-
-  set value(TXPlayerValue? val) {
-    if (_value == val) return;
-    _value = val;
-    notifyListeners();
+  void onNetEvent(Map event) {
+    final Map<dynamic, dynamic> map = event;
+    _netStatusStreamController.add(map);
   }
 
-  double? resizeVideoWidth = 0;
-  double? resizeVideoHeight = 0;
-  double? videoLeft = 0;
-  double? videoTop = 0;
-  double? videoRight = 0;
-  double? videoBottom = 0;
+  /// event type:
+  ///
+  /// 事件类型:
+  /// see:https://cloud.tencent.com/document/product/454/7886#.E6.92.AD.E6.94.BE.E4.BA.8B.E4.BB.B6
+  @override
+  void onPlayerEvent(Map event) {
+    final Map<dynamic, dynamic> map = event;
+    switch (map["event"]) {
+      case TXVodPlayEvent.PLAY_EVT_RTMP_STREAM_BEGIN:
+        break;
+      case TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME:
+        if (_isNeedDisposed) return;
+        _changeState(TXPlayerState.playing);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_BEGIN:
+        if (_isNeedDisposed) return;
+        _changeState(TXPlayerState.playing);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS: // Playback progress.
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_END:
+        _changeState(TXPlayerState.stopped);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_LOADING:
+        _changeState(TXPlayerState.buffering);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION: // Downstream video resolution change.
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          int? videoWidth = event[TXVodPlayEvent.EVT_VIDEO_WIDTH];
+          int? videoHeight = event[TXVodPlayEvent.EVT_VIDEO_HEIGHT];
+          videoWidth ??= event[TXVodPlayEvent.EVT_PARAM1];
+          videoHeight ??= event[TXVodPlayEvent.EVT_PARAM2];
+          if ((videoWidth != null && videoWidth > 0) && (videoHeight != null && videoHeight > 0)) {
+            resizeVideoWidth = videoWidth.toDouble();
+            resizeVideoHeight = videoHeight.toDouble();
+            videoLeft = event["videoLeft"] ?? 0;
+            videoTop = event["videoTop"] ?? 0;
+            videoRight = event["videoRight"] ?? 0;
+            videoBottom = event["videoBottom"] ?? 0;
+          }
+        }
+        int videoDegree = map['EVT_KEY_VIDEO_ROTATION'] ?? 0;
+        if (Platform.isIOS && videoDegree == -1) {
+          videoDegree = 0;
+        }
+        value = _value!.copyWith(degree: videoDegree);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_VOD_PLAY_PREPARED: // VOD loading completed.
+        break;
+      case TXVodPlayEvent.PLAY_EVT_VOD_LOADING_END: // Loading ended
+        break;
+      case TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT:
+        _changeState(TXPlayerState.failed);
+        break;
+      case TXVodPlayEvent.PLAY_ERR_FILE_NOT_FOUND:
+        _changeState(TXPlayerState.failed);
+        break;
+      case TXVodPlayEvent.PLAY_ERR_HLS_KEY:
+        _changeState(TXPlayerState.failed);
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_RECONNECT:
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_DNS_FAIL:
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_SEVER_CONN_FAIL:
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_SHAKE_FAIL:
+        break;
+      case TXVodPlayEvent.EVENT_SUBTITLE_DATA:
+        String subtitleDataStr = map[TXVodPlayEvent.EXTRA_SUBTITLE_DATA] ?? "";
+        if (subtitleDataStr != "") {
+          map[TXVodPlayEvent.EXTRA_SUBTITLE_DATA] = subtitleDataStr.trim().replaceAll('\\N', '\n');
+        }
+        break;
+      default:
+        break;
+    }
+    _eventStreamController.add(map);
+  }
 }

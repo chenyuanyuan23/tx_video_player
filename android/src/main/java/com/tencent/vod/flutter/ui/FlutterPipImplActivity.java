@@ -31,10 +31,8 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
 import com.tencent.liteav.base.util.LiteavLog;
-import com.tencent.rtmp.ITXLivePlayListener;
 import com.tencent.rtmp.ITXVodPlayListener;
 import com.tencent.rtmp.TXLiveConstants;
-import com.tencent.rtmp.TXLivePlayer;
 import com.tencent.rtmp.TXVodPlayer;
 import com.tencent.vod.flutter.FTXEvent;
 import com.tencent.vod.flutter.FTXPIPManager.PipParams;
@@ -46,7 +44,7 @@ import com.tencent.vod.flutter.tools.TXSimpleEventBus;
 
 
 public class FlutterPipImplActivity extends Activity implements TextureView.SurfaceTextureListener, ITXVodPlayListener,
-        ITXLivePlayListener, ServiceConnection {
+        ServiceConnection {
 
     private static final String TAG = "FlutterPipImplActivity";
     private static TXPlayerHolder pipPlayerHolder;
@@ -129,7 +127,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         }
         isInPip = true;
         // pause first, resume video after entered pip
-        playerHolder.tmpPause();
+        playerHolder.pause();
         pipPlayerHolder = playerHolder;
         Intent intent = new Intent(activity, FlutterPipImplActivity.class);
         Bundle bundle = new Bundle();
@@ -166,7 +164,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
             LiteavLog.e(TAG, "lack pipPlayerHolder player, please check the pip argument");
             finish();
         }
-        Intent intent =  getIntent();
+        Intent intent = getIntent();
         Bundle data = intent.getBundleExtra("data");
         if (null != data) {
             PipParams params = data.getParcelable(FTXEvent.EXTRA_NAME_PARAMS);
@@ -191,7 +189,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     }
 
     private void setLivePlayerListener() {
-        mPlayerHolder.getLivePlayer().setPlayListener(this);
+        // pip not need live observer
     }
 
     @Override
@@ -296,6 +294,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     private void handlePipExitEvent() {
         Bundle data = new Bundle();
         TXPipResult pipResult = new TXPipResult();
+        pipResult.setPlaying(mPlayerHolder.isPlaying());
         if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_VOD) {
             if (mIsPlayEnd) {
                 pipResult.setPlayTime(0F);
@@ -303,11 +302,9 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
                 Float currentPlayTime = mPlayerHolder.getVodPlayer().getCurrentPlaybackTime();
                 pipResult.setPlayTime(currentPlayTime);
             }
-            pipResult.setPlaying(mPlayerHolder.getVodPlayer().isPlaying());
             pipResult.setPlayerId(mCurrentParams.getCurrentPlayerId());
             data.putParcelable(FTXEvent.EXTRA_NAME_RESULT, pipResult);
         } else if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_LIVE) {
-            pipResult.setPlaying(mPlayerHolder.getLivePlayer().isPlaying());
             pipResult.setPlayerId(mCurrentParams.getCurrentPlayerId());
             data.putParcelable(FTXEvent.EXTRA_NAME_RESULT, pipResult);
         }
@@ -315,13 +312,9 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
             mPlayerHolder.getVodPlayer().setSurface(null);
         }
         if (null != mPlayerHolder.getLivePlayer()) {
-            mPlayerHolder.getLivePlayer().setSurface(null);
+            mPlayerHolder.getLivePlayer().setRenderView((TextureView) null);
         }
-        if (null != mPlayerHolder.getVodPlayer()) {
-            mPlayerHolder.getVodPlayer().pause();
-        } else if (null != mPlayerHolder.getLivePlayer()) {
-            mPlayerHolder.getLivePlayer().pause();
-        }
+        mPlayerHolder.pause();
         int codeEvent = mIsNeedToStop ? FTXEvent.EVENT_PIP_MODE_ALREADY_EXIT : FTXEvent.EVENT_PIP_MODE_RESTORE_UI;
         sendPipEvent(codeEvent, data);
         exitPip(codeEvent == FTXEvent.EVENT_PIP_MODE_ALREADY_EXIT);
@@ -339,13 +332,22 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
             if (TextUtils.equals(action, FTXEvent.PIP_ACTION_START)) {
                 startPipVideo();
             } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_EXIT)) {
-                exitPip(true);
+                mIsNeedToStop = true;
+                handlePipExitEvent();
             } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_UPDATE)) {
                 Bundle data = intent.getBundleExtra("data");
                 if (null != data) {
                     PipParams pipParams = data.getParcelable(FTXEvent.EXTRA_NAME_PARAMS);
                     updatePip(pipParams);
                 }
+            } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_DO_EXIT)) {
+                overridePendingTransition(0, 0);
+                if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
+                    FlutterPipImplActivity.this.finishAndRemoveTask();
+                } else {
+                    FlutterPipImplActivity.this.finish();
+                }
+                mIsPipFinishing = false;
             } else {
                 LiteavLog.e(TAG, "unknown pip action:" + action);
             }
@@ -353,7 +355,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     }
 
     private void updatePip(PipParams pipParams) {
-        if (null != pipParams) {
+        if (null != pipParams && !isDestroyed() && !isFinishing()) {
             mCurrentParams = pipParams;
             if (VERSION.SDK_INT >= VERSION_CODES.O) {
                 setPictureInPictureParams(pipParams.buildParams(this));
@@ -361,17 +363,17 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         }
     }
 
+
     /**
      * move task to from。Prevent the issue of picture-in-picture windows failing to launch the app in certain cases.
      */
     public void movePreActToFront() {
-        if (VERSION.SDK_INT == VERSION_CODES.Q) {
-            Activity activity = TXFlutterEngineHolder.getInstance().getPreActivity();
-            if (null != activity) {
-                Intent intent = new Intent(FlutterPipImplActivity.this, activity.getClass());
-                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                startActivity(intent);
-            }
+        Activity activity = TXFlutterEngineHolder.getInstance().getPreActivity();
+        if (null != activity) {
+            Intent intent = new Intent(FlutterPipImplActivity.this, activity.getClass());
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
         }
     }
 
@@ -379,15 +381,16 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
      * move task to from。Prevent the issue of picture-in-picture windows failing to launch the app in certain cases.
      */
     public void moveCurActToFront() {
-        mPipContainer.postDelayed(new Runnable() {
+        mPipContainer.post(new Runnable() {
             @Override
             public void run() {
                 Activity activity = FlutterPipImplActivity.this;
                 Intent intent = new Intent(FlutterPipImplActivity.this, activity.getClass());
                 intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                intent.setAction(FTXEvent.PIP_ACTION_DO_EXIT);
                 startActivity(intent);
             }
-        },2000);
+        });
     }
 
     /**
@@ -414,16 +417,23 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
                 mMainHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
+                        /*
+                        The PiP window can launch its own Activity. Therefore,
+                        we can initiate our own here. By executing the termination code during the launch,
+                         we can bring our own Activity back to the original AppTask and launch the original app.
+                         Subsequently, when we end the Picture-in-Picture page,
+                         it can display back to the original page.
+                         */
+                        moveCurActToFront();
                         overridePendingTransition(0, 0);
                         if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
-                            finishAndRemoveTask();
+                            FlutterPipImplActivity.this.finishAndRemoveTask();
                         } else {
-                            finish();
+                            FlutterPipImplActivity.this.finish();
                         }
                         mIsPipFinishing = false;
-                        movePreActToFront();
                     }
-                }, 600);
+                }, 800);
             } else {
                 overridePendingTransition(0, 0);
                 if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
@@ -447,11 +457,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         if (null != mPlayerHolder) {
             boolean isInitPlaying = mPlayerHolder.isPlayingWhenCreate();
             if (isInitPlaying) {
-                if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_VOD) {
-                    mPlayerHolder.getVodPlayer().resume();
-                } else if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_LIVE) {
-                    mPlayerHolder.getLivePlayer().resume();
-                }
+                mPlayerHolder.resume();
             }
         } else {
             LiteavLog.e(TAG, "miss player when startPlay");
@@ -508,7 +514,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
 
     private void bindAndroid12BugServiceIfNeed() {
         if (Build.VERSION.SDK_INT >= VERSION_CODES.Q) {
-            Intent serviceIntent = new Intent(this, TXAndroid12BridgeService.class);
+            Intent serviceIntent = new Intent(getApplicationContext(), TXAndroid12BridgeService.class);
             startService(serviceIntent);
             bindService(serviceIntent, this, Context.BIND_AUTO_CREATE);
         }
@@ -519,7 +525,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
             if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_VOD) {
                 mPlayerHolder.getVodPlayer().setSurface(surface);
             } else if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_LIVE) {
-                mPlayerHolder.getLivePlayer().setSurface(surface);
+                mPlayerHolder.getLivePlayer().setRenderView(mVideoSurface);
             } else {
                 LiteavLog.e(TAG, "unknown player type:" + mPlayerHolder.getPlayerType());
             }
@@ -542,23 +548,11 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     }
 
     private void handleResumeOrPause() {
-        boolean dstPlaying = false;
-        if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_VOD) {
-            TXVodPlayer vodPlayer = mPlayerHolder.getVodPlayer();
-            dstPlaying = !vodPlayer.isPlaying();
-            if (dstPlaying) {
-                vodPlayer.resume();
-            } else {
-                vodPlayer.pause();
-            }
-        } else if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_LIVE) {
-            TXLivePlayer livePlayer = mPlayerHolder.getLivePlayer();
-            dstPlaying = !livePlayer.isPlaying();
-            if (dstPlaying) {
-                livePlayer.resume();
-            } else {
-                livePlayer.pause();
-            }
+        boolean dstPlaying = !mPlayerHolder.isPlaying();
+        if (dstPlaying) {
+            mPlayerHolder.resume();
+        } else {
+            mPlayerHolder.pause();
         }
         handleResumeOrPause(dstPlaying);
     }
@@ -653,24 +647,18 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         sendPlayerEvent(event, bundle);
     }
 
-    @Override
-    public void onPlayEvent(int event, Bundle bundle) {
-    }
-
     private void sendPlayerEvent(int eventCode, Bundle data) {
-        Bundle params = new Bundle();
-        params.putInt(FTXEvent.EXTRA_NAME_PLAYER_ID, mCurrentParams.getCurrentPlayerId());
-        params.putInt(FTXEvent.EXTRA_NAME_PIP_PLAYER_EVENT_ID, eventCode);
-        params.putBundle(FTXEvent.EXTRA_NAME_PIP_PLAYER_EVENT_PARAMS, data);
-        TXSimpleEventBus.getInstance().post(FTXEvent.EVENT_PIP_PLAYER_EVENT_ACTION, params);
+        if (null != mCurrentParams) {
+            Bundle params = new Bundle();
+            params.putInt(FTXEvent.EXTRA_NAME_PLAYER_ID, mCurrentParams.getCurrentPlayerId());
+            params.putInt(FTXEvent.EXTRA_NAME_PIP_PLAYER_EVENT_ID, eventCode);
+            params.putBundle(FTXEvent.EXTRA_NAME_PIP_PLAYER_EVENT_PARAMS, data);
+            TXSimpleEventBus.getInstance().post(FTXEvent.EVENT_PIP_PLAYER_EVENT_ACTION, params);
+        }
     }
 
     @Override
     public void onNetStatus(TXVodPlayer txVodPlayer, Bundle bundle) {
-    }
-
-    @Override
-    public void onNetStatus(Bundle bundle) {
     }
 
     @Override
@@ -680,5 +668,4 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     @Override
     public void onServiceDisconnected(ComponentName name) {
     }
-
 }
