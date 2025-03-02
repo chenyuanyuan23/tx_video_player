@@ -2635,10 +2635,11 @@ class TXFlutterVodPlayerApi {
         details: pigeonVar_replyList[2],
       );
     } else if (pigeonVar_replyList[0] == null) {
-      throw PlatformException(
-        code: 'null-error',
-        message: 'Host platform returned null value for non-null return value.',
-      );
+      return DoubleMsg(value: 0);
+      // throw PlatformException(
+      //   code: 'null-error',
+      //   message: 'Host platform returned null value for non-null return value.',
+      // );
     } else {
       return (pigeonVar_replyList[0] as DoubleMsg?)!;
     }
