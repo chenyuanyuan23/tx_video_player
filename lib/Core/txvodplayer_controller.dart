@@ -9,6 +9,9 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
   late TXFlutterVodPlayerApi _vodPlayerApi;
   final Completer<int> _initPlayer;
   final Completer<int> _createTexture;
+  bool get isInitialized {
+    return _initPlayer.isCompleted && _createTexture.isCompleted;
+  }
   bool _isDisposed = false;
   bool _isNeedDisposed = false;
   TXPlayerValue? _value;
@@ -431,6 +434,13 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
     await _initPlayer.future;
     IntMsg intMsg = await _vodPlayerApi.getHeight(PlayerMsg()..playerId = _playerId);
     return intMsg.value ?? 0;
+  }
+
+  // 宽高比
+  Future<double> getAspectRatio() async {
+    if (_isNeedDisposed) return 0;
+    await _initPlayer.future;
+    return await getWidth() / await getHeight();
   }
 
   /// Set the token for playing the video.
