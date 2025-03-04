@@ -1,12 +1,12 @@
 // Copyright (c) 2022 Tencent. All rights reserved.
 part of SuperPlayer;
 
-class TXLivePlayerController extends ChangeNotifier implements ValueListenable<TXPlayerValue?>,
-    TXPlayerController, TXLivePlayerFlutterAPI {
+final TXFlutterLivePlayerApi _livePlayerApi = TXFlutterLivePlayerApi();
+
+class TXLivePlayerController extends ChangeNotifier implements ValueListenable<TXPlayerValue?>, TXPlayerController {
   int? _playerId = -1;
   static String kTag = "TXLivePlayerController";
 
-  late TXFlutterLivePlayerApi _livePlayerApi;
   final Completer<int> _initPlayer;
   final Completer<int> _createTexture;
   bool _isDisposed = false;
@@ -15,37 +15,19 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   TXPlayerState? _state;
 
   TXPlayerState? get playState => _state;
-
-  @override
-  get value => _value;
-
-  set value(TXPlayerValue? val) {
-    if (_value == val) return;
-    _value = val;
-    notifyListeners();
-  }
-
-  @override
-  Future<int> get textureId async {
-    return _createTexture.future;
-  }
-
-  double? resizeVideoWidth = 0;
-  double? resizeVideoHeight = 0;
-  double? videoLeft = 0;
-  double? videoTop = 0;
-  double? videoRight = 0;
-  double? videoBottom = 0;
+  StreamSubscription? _eventSubscription;
+  StreamSubscription? _netSubscription;
 
   final StreamController<TXPlayerState?> _stateStreamController = StreamController.broadcast();
 
   final StreamController<Map<dynamic, dynamic>> _eventStreamController = StreamController.broadcast();
+
   final StreamController<Map<dynamic, dynamic>> _netStatusStreamController = StreamController.broadcast();
 
   Stream<TXPlayerState?> get onPlayerState => _stateStreamController.stream;
+
   Stream<Map<dynamic, dynamic>> get onPlayerEventBroadcast => _eventStreamController.stream;
 
-  @Deprecated("playerNetEvent will no longer return any events.")
   Stream<Map<dynamic, dynamic>> get onPlayerNetStatusBroadcast => _netStatusStreamController.stream;
 
   TXLivePlayerController()
@@ -58,9 +40,89 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
 
   Future<void> _create() async {
     _playerId = await SuperPlayerPlugin.createLivePlayer();
-    _livePlayerApi = TXFlutterLivePlayerApi(messageChannelSuffix: _playerId.toString());
-    TXLivePlayerFlutterAPI.setUp(this, messageChannelSuffix: _playerId.toString());
+    _eventSubscription = EventChannel("cloud.tencent.com/txliveplayer/event/$_playerId")
+        .receiveBroadcastStream("event")
+        .listen(_eventHandler, onError: _errorHandler);
+    _netSubscription = EventChannel("cloud.tencent.com/txliveplayer/net/$_playerId")
+        .receiveBroadcastStream("net")
+        .listen(_netHandler, onError: _errorHandler);
     _initPlayer.complete(_playerId);
+  }
+
+  /// event type
+  ///
+  /// event 类型
+  /// see:https://cloud.tencent.com/document/product/454/7886#.E6.92.AD.E6.94.BE.E4.BA.8B.E4.BB.B6
+  ///
+  _eventHandler(event) {
+    if (event == null) return;
+    final Map<dynamic, dynamic> map = event;
+    switch (map["event"]) {
+      case TXVodPlayEvent.PLAY_EVT_RTMP_STREAM_BEGIN:
+        break;
+      case TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME:
+        if (_isNeedDisposed) return;
+        if (_state == TXPlayerState.buffering) _changeState(TXPlayerState.playing);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_BEGIN:
+        if (_isNeedDisposed) return;
+        if (_state == TXPlayerState.buffering) _changeState(TXPlayerState.playing);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS: //EVT_PLAY_PROGRESS
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_END:
+        _changeState(TXPlayerState.stopped);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_PLAY_LOADING:
+        _changeState(TXPlayerState.buffering);
+        break;
+      case TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION: //下行视频分辨率改变
+        if (defaultTargetPlatform == TargetPlatform.android) {
+          int? videoWidth = event[TXVodPlayEvent.EVT_VIDEO_WIDTH];
+          int? videoHeight = event[TXVodPlayEvent.EVT_VIDEO_HEIGHT];
+          videoWidth ??= event[TXVodPlayEvent.EVT_PARAM1];
+          videoHeight ??= event[TXVodPlayEvent.EVT_PARAM2];
+          if ((videoWidth != null && videoWidth > 0) && (videoHeight != null && videoHeight > 0)) {
+            resizeVideoWidth = videoWidth.toDouble();
+            resizeVideoHeight = videoHeight.toDouble();
+            videoLeft = event["videoLeft"] ?? 0;
+            videoTop = event["videoTop"] ?? 0;
+            videoRight = event["videoRight"] ?? 0;
+            videoBottom = event["videoBottom"] ?? 0;
+          }
+        }
+        break;
+      // Live broadcast, stream switching succeeded (stream switching can play videos of different sizes):
+      case TXVodPlayEvent.PLAY_EVT_STREAM_SWITCH_SUCC:
+        break;
+      case TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT: //disconnect
+        _changeState(TXPlayerState.failed);
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_RECONNECT: //reconnect
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_DNS_FAIL: //dnsFail
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_SEVER_CONN_FAIL: //severConnFail
+        break;
+      case TXVodPlayEvent.PLAY_WARNING_SHAKE_FAIL: //shakeFail
+        break;
+      case TXVodPlayEvent.PLAY_ERR_STREAM_SWITCH_FAIL: //failed
+        _changeState(TXPlayerState.failed);
+        break;
+      default:
+        break;
+    }
+    _eventStreamController.add(map);
+  }
+
+  _errorHandler(error) {
+    //debugPrint("= error = ${error.toString()}");
+  }
+
+  _netHandler(event) {
+    if (event == null) return;
+    final Map<dynamic, dynamic> map = event;
+    _netStatusStreamController.add(map);
   }
 
   _changeState(TXPlayerState playerState) {
@@ -81,10 +143,11 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   /// 参考: [PlayType.LIVE_RTMP] ...
   @deprecated
   Future<bool> play(String url, {int? playType}) async {
-    if (_isNeedDisposed) return false;
     return await startLivePlay(url, playType: playType);
   }
 
+  /// When setting a [LivePlayer] type player, the parameter [playType] is required.
+  /// Reference: [PlayType.LIVE_RTMP] ...
   /// Starting from version 10.7, the method `startPlay` has been changed to `startLivePlay` for playing videos via a URL.
   /// To play videos successfully, it is necessary to set the license by using the method `SuperPlayerPlugin#setGlobalLicense`.
   /// Failure to set the license will result in video playback failure (a black screen).
@@ -95,24 +158,20 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   /// @param url : 视频播放地址 video playback address
   /// return 是否播放成功 if play successfully
   ///
-  /// <h1>
-  ///   @deprecated: playType is invalid now, it will removed in future version
-  /// </h1>
-  ///
+  /// 当设置[LivePlayer] 类型播放器时，需要参数[playType]
+  /// 参考: [PlayType.LIVE_RTMP] ...
   /// 10.7版本开始，startPlay变更为startLivePlay，需要通过 {@link SuperPlayerPlugin#setGlobalLicense} 设置 Licence 后方可成功播放，
   /// 否则将播放失败（黑屏），全局仅设置一次即可。直播 Licence、短视频 Licence 和视频播放 Licence 均可使用，若您暂未获取上述 Licence ，
   /// 可[快速免费申请测试版 Licence](https://cloud.tencent.com/act/event/License) 以正常播放，正式版 License 需[购买]
   /// (https://cloud.tencent.com/document/product/881/74588#.E8.B4.AD.E4.B9.B0.E5.B9.B6.E6.96.B0.E5.BB.BA.E6.AD.A3.E5.BC.8F.E7.89.88-license)。
-  ///
-  ///
-  Future<bool> startLivePlay(String url, {@deprecated int? playType}) async {
-    if (_isNeedDisposed) return false;
+  Future<bool> startLivePlay(String url, {int? playType}) async {
     await _initPlayer.future;
     await _createTexture.future;
     _changeState(TXPlayerState.buffering);
     printVersionInfo();
-    BoolMsg boolMsg = await _livePlayerApi.startLivePlay(StringPlayerMsg()
-      ..value = url
+    BoolMsg boolMsg = await _livePlayerApi.startLivePlay(StringIntPlayerMsg()
+      ..strValue = url
+      ..intValue = playType
       ..playerId = _playerId);
     return boolMsg.value ?? false;
   }
@@ -153,7 +212,6 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   /// 视频是否处于正在播放中
   @override
   Future<bool> isPlaying() async {
-    if (_isNeedDisposed) return false;
     await _initPlayer.future;
     BoolMsg boolMsg = await _livePlayerApi.isPlaying(PlayerMsg()..playerId = _playerId);
     return boolMsg.value ?? false;
@@ -278,16 +336,22 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   /// 使用系统默认图标，只支持flutter本地资源图片，传递的时候，与flutter使用图片资源一致，例如： images/back_icon.png
   @override
   Future<int> enterPictureInPictureMode(
-      {String? backIconForAndroid, String? playIconForAndroid, String? pauseIconForAndroid, String? forwardIconForAndroid}) async {
-    if (_isNeedDisposed) return -1;
-    await _initPlayer.future;
-    IntMsg intMsg = await _livePlayerApi.enterPictureInPictureMode(PipParamsPlayerMsg()
-      ..backIconForAndroid = backIconForAndroid
-      ..playIconForAndroid = playIconForAndroid
-      ..pauseIconForAndroid = pauseIconForAndroid
-      ..forwardIconForAndroid = forwardIconForAndroid
-      ..playerId = _playerId);
-    return intMsg.value ?? -1;
+      {String? backIconForAndroid,
+      String? playIconForAndroid,
+      String? pauseIconForAndroid,
+      String? forwardIconForAndroid}) async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _initPlayer.future;
+      IntMsg intMsg = await _livePlayerApi.enterPictureInPictureMode(PipParamsPlayerMsg()
+        ..backIconForAndroid = backIconForAndroid
+        ..playIconForAndroid = playIconForAndroid
+        ..pauseIconForAndroid = pauseIconForAndroid
+        ..forwardIconForAndroid = forwardIconForAndroid
+        ..playerId = _playerId);
+      return intMsg.value ?? -1;
+    } else {
+      return -1;
+    }
   }
 
   /// Exit picture-in-picture mode if the player is in picture-in-picture mode.
@@ -295,111 +359,7 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   /// 退出画中画，如果该播放器处于画中画模式
   @override
   Future<void> exitPictureInPictureMode() async {
-    if (_isNeedDisposed) return;
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      await _livePlayerApi.exitPictureInPictureMode(PlayerMsg()
-        ..playerId = _playerId);
-    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-      await _livePlayerApi.enablePictureInPicture(BoolPlayerMsg()
-        ..value = false
-        ..playerId = _playerId);
-    }
-  }
-
-  ///
-  /// Enable reception of SEI messages
-  ///
-  /// 开启接收 SEI 消息
-  ///
-  /// @param enable      YES: Enable reception of SEI messages; NO: Disable reception of SEI messages. [Default]: NO.
-  ///                     YES: 开启接收 SEI 消息; NO: 关闭接收 SEI 消息。【默认值】: NO。
-  /// @param payloadType Specify the payloadType for receiving SEI messages, supporting 5, 242, 243.
-  ///                   Please keep it consistent with the sender's payloadType.
-  ///                   指定接收 SEI 消息的 payloadType，支持 5、242、243，请与发送端的 payloadType 保持一致。
-  ///
-  Future<int> enableReceiveSeiMessage(bool isEnabled, int payloadType) async {
-    if (_isNeedDisposed) return -1;
-    return await _livePlayerApi.enableReceiveSeiMessage(PlayerMsg(playerId: _playerId),
-        isEnabled, payloadType);
-  }
-
-  ///
-  /// Whether to display the debugging overlay of player status information
-  ///
-  /// 是否显示播放器状态信息的调试浮层
-  ///
-  /// @param isShow 是否显示。default：NO。
-  ///
-  Future<void> showDebugView(bool isShow) async {
-    if (_isNeedDisposed) return;
-    await _livePlayerApi.showDebugView(PlayerMsg(playerId: _playerId), isShow);
-  }
-
-  ///
-  /// Call the advanced API interface of V2TXLivePlayer
-  ///
-  /// @note This interface is used to call some advanced features.
-  /// @param key The corresponding key for the advanced API, please refer to the definition of {@link V2TXLiveProperty} for details.
-  /// @param value The parameters required when calling the advanced API corresponding to the key.
-  /// @return The return value {@link V2TXLiveCode}.
-  ///         - 0: Success.
-  ///         - -2: Operation failed, key is not allowed to be nil.
-  ///
-  /// 调用 V2TXLivePlayer 的高级 API 接口
-  ///
-  /// @note  该接口用于调用一些高级功能。
-  /// @param key   高级 API 对应的 key, 详情请参考 {@link V2TXLiveProperty} 定义。
-  /// @param value 调用 key 所对应的高级 API 时，需要的参数。
-  /// @return 返回值 {@link V2TXLiveCode}。
-  ///         - 0: 成功。
-  ///         - -2: 操作失败，key 不允许为 nil。
-  ///
-  Future<int> setProperty(String key, Object value) async {
-    if (_isNeedDisposed) return -1;
-    return await _livePlayerApi.setProperty(PlayerMsg(playerId: _playerId), key, value);
-  }
-
-  ///
-  /// get live steam info
-  ///
-  /// 获取码流信息
-  ///
-  Future<List<FSteamInfo>> getSupportedBitrate() async {
-    if (_isNeedDisposed) return [];
-    ListMsg listMsg = await _livePlayerApi.getSupportedBitrate(PlayerMsg(playerId: _playerId));
-    List<FSteamInfo> steamList = [];
-    if (null != listMsg.value) {
-      for (Object? obj in listMsg.value!) {
-        if (null != obj) {
-          steamList.add(FSteamInfo.createFromMsg(obj));
-        }
-      }
-    }
-    return steamList;
-  }
-
-  ///
-  /// Set the minimum and maximum time for automatic adjustment of player cache (unit: seconds)
-  ///
-  /// @param minTime The minimum time for automatic cache adjustment, which must be greater than 0. [Default]: 1.
-  /// @param maxTime The maximum time for automatic cache adjustment, which must be greater than 0. [Default]: 5.
-  /// @return The return value {@link V2TXLiveCode}.
-  ///         - 0: Success.
-  ///         - -2: Operation failed, minTime and maxTime need to be greater than 0.
-  ///         - -3: The player is in playback state and does not support modifying cache policy.
-  ///
-  /// 设置播放器缓存自动调整的最小和最大时间 ( 单位：秒 )
-  ///
-  /// @param minTime 缓存自动调整的最小时间，取值需要大于0。【默认值】：1。
-  /// @param maxTime 缓存自动调整的最大时间，取值需要大于0。【默认值】：5。
-  /// @return 返回值 {@link V2TXLiveCode}。
-  ///         - 0: 成功。
-  ///         - -2: 操作失败，minTime 和 maxTime 需要大于0。
-  ///         - -3: 播放器处于播放状态，不支持修改缓存策略。
-  ///
-  Future<int> setCacheParams(double minTime, double maxTime) async {
-    if (_isNeedDisposed) return -1;
-    return await _livePlayerApi.setCacheParams(PlayerMsg(playerId: _playerId), minTime, maxTime);
+    await _livePlayerApi.exitPictureInPictureMode(PlayerMsg()..playerId = _playerId);
   }
 
   /// Release player resource occupation.
@@ -417,6 +377,11 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   Future<void> dispose() async {
     _isNeedDisposed = true;
     if (!_isDisposed) {
+      await _eventSubscription?.cancel();
+      _eventSubscription = null;
+      await _netSubscription?.cancel();
+      _netSubscription = null;
+
       await _release();
       _changeState(TXPlayerState.disposed);
       _isDisposed = true;
@@ -428,79 +393,28 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   }
 
   @override
+  get value => _value;
+
+  set value(TXPlayerValue? val) {
+    if (_value == val) return;
+    _value = val;
+    notifyListeners();
+  }
+
+  @override
+  Future<int> get textureId async {
+    return _createTexture.future;
+  }
+
+  double? resizeVideoWidth = 0;
+  double? resizeVideoHeight = 0;
+  double? videoLeft = 0;
+  double? videoTop = 0;
+  double? videoRight = 0;
+  double? videoBottom = 0;
+
+  @override
   TXPlayerValue? playerValue() {
     return _value;
-  }
-
-  @override
-  void onNetEvent(Map<dynamic, dynamic> event) {
-    final Map<dynamic, dynamic> map = event;
-    _netStatusStreamController.add(map);
-  }
-
-  /// event type
-  ///
-  /// event 类型
-  /// see:https://cloud.tencent.com/document/product/454/7886#.E6.92.AD.E6.94.BE.E4.BA.8B.E4.BB.B6
-  ///
-  @override
-  void onPlayerEvent(Map<dynamic, dynamic> event) {
-    final Map<dynamic, dynamic> map = event;
-    switch (map["event"]) {
-      case TXVodPlayEvent.PLAY_EVT_RTMP_STREAM_BEGIN:
-        break;
-      case TXVodPlayEvent.PLAY_EVT_RCV_FIRST_I_FRAME:
-        if (_isNeedDisposed) return;
-        if (_state == TXPlayerState.buffering) _changeState(TXPlayerState.playing);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_BEGIN:
-        if (_isNeedDisposed) return;
-        if (_state == TXPlayerState.buffering) _changeState(TXPlayerState.playing);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_PROGRESS: //EVT_PLAY_PROGRESS
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_END:
-        _changeState(TXPlayerState.stopped);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_PLAY_LOADING:
-        _changeState(TXPlayerState.buffering);
-        break;
-      case TXVodPlayEvent.PLAY_EVT_CHANGE_RESOLUTION: //下行视频分辨率改变
-        if (defaultTargetPlatform == TargetPlatform.android) {
-          int? videoWidth = event[TXVodPlayEvent.EVT_VIDEO_WIDTH];
-          int? videoHeight = event[TXVodPlayEvent.EVT_VIDEO_HEIGHT];
-          videoWidth ??= event[TXVodPlayEvent.EVT_PARAM1];
-          videoHeight ??= event[TXVodPlayEvent.EVT_PARAM2];
-          if ((videoWidth != null && videoWidth > 0) && (videoHeight != null && videoHeight > 0)) {
-            resizeVideoWidth = videoWidth.toDouble();
-            resizeVideoHeight = videoHeight.toDouble();
-            videoLeft = event["videoLeft"] ?? 0;
-            videoTop = event["videoTop"] ?? 0;
-            videoRight = event["videoRight"] ?? 0;
-            videoBottom = event["videoBottom"] ?? 0;
-          }
-        }
-        break;
-      // Live broadcast, stream switching succeeded (stream switching can play videos of different sizes):
-      case TXVodPlayEvent.PLAY_EVT_STREAM_SWITCH_SUCC:
-        break;
-      case TXVodPlayEvent.PLAY_ERR_NET_DISCONNECT: //disconnect
-        _changeState(TXPlayerState.failed);
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_RECONNECT: //reconnect
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_DNS_FAIL: //dnsFail
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_SEVER_CONN_FAIL: //severConnFail
-        break;
-      case TXVodPlayEvent.PLAY_WARNING_SHAKE_FAIL: //shakeFail
-        break;
-      case TXVodPlayEvent.PLAY_ERR_STREAM_SWITCH_FAIL: //failed
-        _changeState(TXPlayerState.failed);
-        break;
-      default:
-        break;
-    }
-    _eventStreamController.add(map);
   }
 }

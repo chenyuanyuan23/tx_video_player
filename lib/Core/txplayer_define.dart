@@ -168,9 +168,6 @@ abstract class TXVodPlayEvent {
   // Playback device exception.
   // 播放设备异常
   static const PLAY_WARNING_SPEAKER_DEVICE_ABNORMAL = 1205;
-  // Receive the first frame data packet event, supported since version 12.0
-  // 收到首帧数据包事件, 12.0版本开始支持
-  static const VOD_PLAY_EVT_VOD_PLAY_FIRST_VIDEO_PACKET = 2017;
   // Seek completed.
   // Seek 完成
   static const VOD_PLAY_EVT_SEEK_COMPLETE = 2019;
@@ -374,12 +371,6 @@ abstract class TXVodPlayEvent {
   // PIP error, PIP function is not started (only support iOS).
   // pip 错误，PIP功能没有启动 only support iOS
   static const ERROR_IOS_PIP_NOT_RUNNING = -111;
-  // PIP  start time out
-  // PIP 启动超时
-  static const ERROR_IOS_PIP_START_TIME_OUT = -112;
-  // Insufficient permissions, currently only appears in Picture-in-Picture live streaming
-  // 权限不足，目前只出现在直播画中画
-  static const ERROR_PIP_AUTH_DENIED = -201;
   // PIP error, currently unable to enter PIP mode, such as being in full screen mode.
   // pip 错误，当前不能进入pip模式，例如正处于全屏模式下
   static const ERROR_PIP_CAN_NOT_ENTER = -120;
@@ -435,25 +426,6 @@ abstract class TXVodPlayEvent {
   static const EXTRA_SUBTITLE_START_POSITION_MS = "startPositionMs";
   static const EXTRA_SUBTITLE_DURATION_MS = "durationMs";
   static const EXTRA_SUBTITLE_TRACK_INDEX = "trackIndex";
-
-  /// Alternative playback URL for HEVC downgrade playback, supported by the Advanced Player 12.0
-  /// HEVC 降级播放时备选播放 URL， 播放器高级版 12.0 版本开始支持
-  static const VOD_KEY_BACKUP_URL = "VOD_KEY_BACKUP_URL";
-  /// When HEVC is downgraded, the main video encoding type
-  /// HEVC 降级播放时，主播放的视频编码类型
-  static const VOD_KEY_VIDEO_CODEC_TYPE = "VOD_KEY_VIDEO_CODEC_TYPE";
-  /// MediaType of alternative playback URL resource during HEVC downgrade playback, supported by the Advanced Player 12.0
-  /// HEVC 降级播放时备选播放 URL 资源的 MediaType， 播放器高级版 12.0 版本开始支持
-  static const VOD_KEY_BACKUP_URL_MEDIA_TYPE = "VOD_KEY_BACKUP_URL_MEDIA_TYPE";
-  /// HEVC format, supported by the player advanced version 12.0
-  /// HEVC 格式， 播放器高级版 12.0 版本开始支持
-  static const VOD_PLAY_MIMETYPE_H265 = "video/hevc";
-  /// mp4加密播放：不加密。 12.2 版本开始支持。
-  /// MP4 encryption playback: No encryption. Supported since version 12.2.
-  static const MP4_ENCRYPTION_LEVEL_NONE = 0;
-  /// mp4加密播放： mp4本地加密播放。12.2 版本开始支持。
-  /// MP4 encrypted playback: MP4 local encrypted playback. Supported since version 12.2.
-  static const MP4_ENCRYPTION_LEVEL_L2 = 2;
 }
 
 abstract class TXVodNetEvent {
@@ -637,9 +609,8 @@ class TXPlayInfoParams {
   // video url, only applicable for preloading. When using it, you only need to fill in either the url or fileId.
   // The priority of the url is higher than that of the fileId.
   final String? url;
-  // Custom httpHeader
-  final Map<String, String>? httpHeader;
-  const TXPlayInfoParams({required this.appId, required this.fileId, this.psign = "", this.url = "", this.httpHeader});
+
+  const TXPlayInfoParams({required this.appId, required this.fileId, this.psign = "", this.url = ""});
 
   Map<String, dynamic> toJson() {
     Map<String, dynamic> json = {};
@@ -647,7 +618,6 @@ class TXPlayInfoParams {
     json["fileId"] = fileId;
     json["psign"] = psign;
     json["url"] = url;
-    json["httpHeader"] = httpHeader;
     return json;
   }
 }
@@ -896,26 +866,6 @@ class TXSubtitleRenderModel {
     msg.endMargin = endMargin;
     msg.verticalMargin = verticalMargin;
     return msg;
-  }
-}
-
-class FSteamInfo {
-  int? width;
-  int? height;
-  int? bitrate;
-  int? frameRate;
-  String? url;
-
-  static FSteamInfo createFromMsg(Object obj) {
-    FSteamInfo info = FSteamInfo();
-    if (obj is Map) {
-      info.width = obj["width"];
-      info.height = obj["height"];
-      info.bitrate = obj["bitrate"];
-      info.frameRate = obj["framerate"];
-      info.url = obj["url"];
-    }
-    return info;
   }
 }
 

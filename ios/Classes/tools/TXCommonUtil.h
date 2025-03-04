@@ -22,6 +22,4 @@
 
 +(ListMsg*)listMsgWith:(NSArray*)value;
 
-+ (NSMutableDictionary *)getParamsWithEvent:(int)EvtID withParams:(NSDictionary *)params;
-
 @end

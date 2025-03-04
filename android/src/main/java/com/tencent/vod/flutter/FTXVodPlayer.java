@@ -52,20 +52,26 @@ import java.util.Map;
 import java.util.Objects;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
+import io.flutter.plugin.common.EventChannel;
 import io.flutter.view.TextureRegistry;
 
 /**
  * vodPlayer plugin processor
  */
-public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
-        FtxMessages.TXFlutterVodPlayerApi, FtxMessages.VoidResult {
+public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener, FtxMessages.TXFlutterVodPlayerApi {
 
     private static final String TAG = "FTXVodPlayer";
 
     private FlutterPlugin.FlutterPluginBinding mFlutterPluginBinding;
 
+    private final EventChannel mEventChannel;
+    private final EventChannel mNetChannel;
+
     private SurfaceTexture mSurfaceTexture;
     private Surface mSurface;
+
+    private final FTXPlayerEventSink mEventSink = new FTXPlayerEventSink();
+    private final FTXPlayerEventSink mNetStatusSink = new FTXPlayerEventSink();
 
     private TXVodPlayer mVodPlayer;
     private TXImageSprite mTxImageSprite;
@@ -76,7 +82,6 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
     private boolean mHardwareDecodeFail = false;
     private final FTXPIPManager mPipManager;
     private boolean mNeedPipResume = false;
-    private final FtxMessages.TXVodPlayerFlutterAPI mVodFlutterApi;
     private final FTXPIPManager.PipCallback mPipCallback = new FTXPIPManager.PipCallback() {
         @Override
         public void onPipResult(TXPipResult result) {
@@ -127,11 +132,35 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
         super();
         mPipManager = pipManager;
         mFlutterPluginBinding = flutterPluginBinding;
-        FtxMessages.TXFlutterVodPlayerApi.setUp(flutterPluginBinding.getBinaryMessenger(),
-                String.valueOf(getPlayerId()), this);
-        mVodFlutterApi = new FtxMessages.TXVodPlayerFlutterAPI(flutterPluginBinding.getBinaryMessenger(),
-                String.valueOf(getPlayerId()));
         TXFlutterEngineHolder.getInstance().addAppLifeListener(mAppLifeListener);
+
+        mEventChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), "cloud.tencent"
+                + ".com/txvodplayer/event/" + super.getPlayerId());
+        mEventChannel.setStreamHandler(new EventChannel.StreamHandler() {
+            @Override
+            public void onListen(Object o, EventChannel.EventSink eventSink) {
+                mEventSink.setEventSinkProxy(eventSink);
+            }
+
+            @Override
+            public void onCancel(Object o) {
+                mEventSink.setEventSinkProxy(null);
+            }
+        });
+
+        mNetChannel = new EventChannel(flutterPluginBinding.getBinaryMessenger(), "cloud.tencent"
+                + ".com/txvodplayer/net/" + super.getPlayerId());
+        mNetChannel.setStreamHandler(new EventChannel.StreamHandler() {
+            @Override
+            public void onListen(Object o, EventChannel.EventSink eventSink) {
+                mNetStatusSink.setEventSinkProxy(eventSink);
+            }
+
+            @Override
+            public void onCancel(Object o) {
+                mNetStatusSink.setEventSinkProxy(null);
+            }
+        });
     }
 
 
@@ -157,6 +186,8 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
             mSurface = null;
         }
 
+        mEventChannel.setStreamHandler(null);
+        mNetChannel.setStreamHandler(null);
         TXFlutterEngineHolder.getInstance().removeAppLifeListener(mAppLifeListener);
         releaseTXImageSprite();
         if (null != mPipManager) {
@@ -183,7 +214,7 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
                     bundle.putInt("videoTop", videoTop);
                     bundle.putInt("videoRight", videoRight);
                     bundle.putInt("videoBottom", videoBottom);
-                    mVodFlutterApi.onPlayerEvent(TXCommonUtil.getParams(event, bundle), this);
+                    mEventSink.success(TXCommonUtil.getParams(event, bundle));
                     return;
                 }
             }
@@ -201,7 +232,7 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
         if (event != TXVodConstants.VOD_PLAY_EVT_PLAY_PROGRESS) {
             LiteavLog.e(TAG, "onPlayEvent:" + event + "," + bundle.getString(TXLiveConstants.EVT_DESCRIPTION));
         }
-        mVodFlutterApi.onPlayerEvent(TXCommonUtil.getParams(event, bundle), this);
+        mEventSink.success(TXCommonUtil.getParams(event, bundle));
     }
 
     // The default size of the surface is 1x1. When hardware decoding fails or software decoding is used,
@@ -218,7 +249,7 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
 
     @Override
     public void onNetStatus(TXVodPlayer txVodPlayer, Bundle bundle) {
-        mVodFlutterApi.onNetEvent(TXCommonUtil.getParams(0, bundle), this);
+        mNetStatusSink.success(TXCommonUtil.getParams(0, bundle));
     }
 
     private byte[] getPlayerImageSprite(final Double time) {
@@ -247,27 +278,16 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
             mVodPlayer = new TXVodPlayer(mFlutterPluginBinding.getApplicationContext());
             mVodPlayer.setVodListener(this);
             // prevent config null exception
-            TXVodPlayConfig playConfig = new TXVodPlayConfig();
-            Map<String, Object> map = new HashMap<>();
-            map.put("450", 0);
-            playConfig.setExtInfo(map);
-            mVodPlayer.setConfig(playConfig);
+            mVodPlayer.setConfig(new TXVodPlayConfig());
             mVodPlayer.setVodSubtitleDataListener(new ITXVodPlayListener.ITXVodSubtitleDataListener() {
                 @Override
                 public void onSubtitleData(TXVodDef.TXVodSubtitleData sub) {
-                    LiteavLog.i(TAG, "callback subtitle"
-                            + " ,index:" + sub.trackIndex
-                            + " ,startMs:" + sub.startPositionMs
-                            + " ,durationMs:" + sub.durationMs
-                            + " ,content:" + sub.subtitleData
-                    );
                     Bundle bundle = new Bundle();
                     bundle.putString(FTXEvent.EXTRA_SUBTITLE_DATA, sub.subtitleData);
                     bundle.putLong(FTXEvent.EXTRA_SUBTITLE_START_POSITION_MS, sub.startPositionMs);
                     bundle.putLong(FTXEvent.EXTRA_SUBTITLE_DURATION_MS, sub.durationMs);
                     bundle.putLong(FTXEvent.EXTRA_SUBTITLE_TRACK_INDEX, sub.trackIndex);
-                    mVodFlutterApi.onPlayerEvent(TXCommonUtil.getParams(FTXEvent.EVENT_SUBTITLE_DATA, bundle),
-                            FTXVodPlayer.this);
+                    mEventSink.success(TXCommonUtil.getParams(FTXEvent.EVENT_SUBTITLE_DATA, bundle));
                 }
             });
             setPlayer(onlyAudio);
@@ -837,15 +857,5 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
                 mVodPlayer.setStringOption(playerMsg.getKey(), value);
             }
         }
-    }
-
-    @Override
-    public void success() {
-
-    }
-
-    @Override
-    public void error(@NonNull Throwable error) {
-        LiteavLog.e(TAG, "callback message error:" + error);
     }
 }

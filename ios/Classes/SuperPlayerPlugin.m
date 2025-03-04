@@ -3,27 +3,32 @@
 #import "FTXLivePlayer.h"
 #import "FTXVodPlayer.h"
 #import "FTXTransformation.h"
+#import "FTXPlayerEventSinkQueue.h"
 #import "FTXEvent.h"
 #import <MediaPlayer/MediaPlayer.h>
 #import "FTXLiteAVSDKHeader.h"
 #import "FTXAudioManager.h"
 #import "FTXDownloadManager.h"
 #import "FtxMessages.h"
+#import "FTXVodPlayerDispatcher.h"
+#import "FTXLivePlayerDispatcher.h"
 #import "FTXLog.h"
 
-@interface SuperPlayerPlugin ()<FTXVodPlayerDelegate,TXFlutterSuperPlayerPluginAPI,TXFlutterNativeAPI, FlutterPlugin, TXLiveBaseDelegate>
+@interface SuperPlayerPlugin ()<FlutterStreamHandler,FTXVodPlayerDelegate,TXFlutterSuperPlayerPluginAPI,TXFlutterNativeAPI, ITXPlayersBridge, FlutterPlugin, TXLiveBaseDelegate>
 
 @property (nonatomic, strong) NSObject<FlutterPluginRegistrar>* registrar;
 @property (nonatomic, strong) NSMutableDictionary *players;
-@property (nonatomic, strong) FTXDownloadManager* fTXDownloadManager;
-@property (nonatomic, strong) FTXAudioManager* audioManager;
-@property (nonatomic, strong) TXPluginFlutterAPI* pluginFlutterApi;
-@property (nonatomic, strong) TXPipFlutterAPI* pipFlutterApi;
 
 @end
 
 @implementation SuperPlayerPlugin {
     float orginBrightness;
+    FlutterEventChannel *_eventChannel;
+    FlutterEventChannel *_pipEventChannel;
+    FTXPlayerEventSinkQueue *_eventSink;
+    FTXPlayerEventSinkQueue *_pipEventSink;
+    FTXAudioManager *audioManager;
+    FTXDownloadManager *_fTXDownloadManager;
     int mCurrentOrientation;
 }
 
@@ -32,8 +37,10 @@ SuperPlayerPlugin* instance;
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {
     FTXLOGV(@"called registerWithRegistrar");
     instance = [[SuperPlayerPlugin alloc] initWithRegistrar:registrar];
-    SetUpTXFlutterNativeAPI([registrar messenger], instance);
-    SetUpTXFlutterSuperPlayerPluginAPI([registrar messenger], instance);
+    TXFlutterSuperPlayerPluginAPISetup([registrar messenger], instance);
+    TXFlutterNativeAPISetup([registrar messenger], instance);
+    TXFlutterVodPlayerApiSetup([registrar messenger], [[FTXVodPlayerDispatcher alloc] initWithBridge:instance]);
+    TXFlutterLivePlayerApiSetup([registrar messenger], [[FTXLivePlayerDispatcher alloc] initWithBridge:instance]);
     [registrar addApplicationDelegate:instance];
     [TXLiveBase sharedInstance].delegate = instance;
 }
@@ -49,43 +56,59 @@ SuperPlayerPlugin* instance;
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (instancetype)initWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
+- (instancetype)initWithRegistrar:
+(NSObject<FlutterPluginRegistrar> *)registrar {
     self = [super init];
     if (self) {
         [registrar publish:self];
         _registrar = registrar;
         _players = @{}.mutableCopy;
-        self.pluginFlutterApi = [[TXPluginFlutterAPI alloc] initWithBinaryMessenger:[registrar messenger]];
-        self.pipFlutterApi = [[TXPipFlutterAPI alloc] initWithBinaryMessenger:[registrar messenger]];
-        // light componet init
-        orginBrightness = [UIScreen mainScreen].brightness;
-        
-        // brightness event
-        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-        [center addObserver:self selector:@selector(brightnessDidChange:) name:UIScreenBrightnessDidChangeNotification object:[UIScreen mainScreen]];
-        
-        [self.audioManager registerVolumeChangeListener:self];
-        _fTXDownloadManager = [[FTXDownloadManager alloc] initWithRegistrar:registrar];
-        // orientation
-        mCurrentOrientation = ORIENTATION_PORTRAIT_UP;
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(onDeviceOrientationChange:)
-                                                     name:UIDeviceOrientationDidChangeNotification
-                                                   object:nil];
     }
+    // light componet init
+    orginBrightness = [UIScreen mainScreen].brightness;
+    // volume componet init
+    audioManager = [[FTXAudioManager alloc] init];
+    // volume event stream
+    _eventSink = [FTXPlayerEventSinkQueue new];
+    _pipEventSink = [FTXPlayerEventSinkQueue new];
+    _eventChannel = [FlutterEventChannel eventChannelWithName:@"cloud.tencent.com/playerPlugin/event" binaryMessenger:[registrar messenger]];
+    _pipEventChannel = [FlutterEventChannel eventChannelWithName:@"cloud.tencent.com/playerPlugin/componentEvent" binaryMessenger:[registrar messenger]];
+    [_eventChannel setStreamHandler:self];
+    [_pipEventChannel setStreamHandler:self];
+
+    // brightness event
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    [center addObserver:self selector:@selector(brightnessDidChange:) name:UIScreenBrightnessDidChangeNotification object:[UIScreen mainScreen]];
+    
+    [audioManager registerVolumeChangeListener:self];
+     _fTXDownloadManager = [[FTXDownloadManager alloc] initWithRegistrar:registrar];
+    // orientation
+    mCurrentOrientation = ORIENTATION_PORTRAIT_UP;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(onDeviceOrientationChange:)
+            name:UIDeviceOrientationDidChangeNotification
+          object:nil];
+
     return self;
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context
 {
-    [self.pluginFlutterApi onNativeEventEvent:[TXCommonUtil getParamsWithEvent:EVENT_VOLUME_CHANGED withParams:@{}] completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_eventSink success:[SuperPlayerPlugin getParamsWithEvent:EVENT_VOLUME_CHANGED withParams:@{}]];
+}
+
++ (NSDictionary *)getParamsWithEvent:(int)EvtID withParams:(NSDictionary *)params
+{
+    NSMutableDictionary<NSString*,NSObject*> *dict = [NSMutableDictionary dictionaryWithObject:@(EvtID) forKey:@"event"];
+    if (params != nil && params.count != 0) {
+        [dict addEntriesFromDictionary:params];
+    }
+    return dict;
 }
 
 -(void) destory
 {
-    [self.audioManager destory:self];
+    [audioManager destory:self];
 }
 
 -(void) setSysBrightness:(NSNumber*)brightness {
@@ -107,17 +130,9 @@ SuperPlayerPlugin* instance;
     FTXLOGV(@"called releasePlayerInner,%@ is start release", playerId);
     FTXBasePlayer *player = [_players objectForKey:playerId];
     if (player != nil) {
-        FTXLOGI(@"releasePlayer start destroy player :%@", playerId);
         [player destory];
         [_players removeObjectForKey:playerId];
     }
-}
-
-- (FTXAudioManager *)audioManager {
-    if (!self->_audioManager) {
-        self->_audioManager = [[FTXAudioManager alloc] init];
-    }
-    return self->_audioManager;
 }
 
 /**
@@ -125,9 +140,7 @@ SuperPlayerPlugin* instance;
  */
 - (void)brightnessDidChange:(NSNotification *)notification
 {
-    [self.pluginFlutterApi onNativeEventEvent:[TXCommonUtil getParamsWithEvent:EVENT_BRIGHTNESS_CHANGED withParams:@{}] completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_eventSink success:[SuperPlayerPlugin getParamsWithEvent:EVENT_BRIGHTNESS_CHANGED withParams:@{}]];
 }
 
 #pragma mark - FlutterPlugin
@@ -145,45 +158,57 @@ SuperPlayerPlugin* instance;
     }
 }
 
+#pragma mark - FlutterStreamHandler
+- (FlutterError* _Nullable)onListenWithArguments:(id _Nullable)arguments
+                                       eventSink:(FlutterEventSink)events
+{
+    if ([arguments isKindOfClass:NSString.class]) {
+        if ([arguments isEqualToString:@"event"]) {
+            [_eventSink setDelegate:events];
+        } else if ([arguments isEqualToString:@"pipEvent"]) {
+            [_pipEventSink setDelegate:events];
+        }
+    }
 
+    return nil;
+}
 
+- (FlutterError* _Nullable)onCancelWithArguments:(id _Nullable)arguments
+{
+    if ([arguments isKindOfClass:NSString.class]) {
+        if ([arguments isEqualToString:@"event"]) {
+            [_eventSink setDelegate:nil];
+        } else if ([arguments isEqualToString:@"pipEvent"]) {
+            [_pipEventSink setDelegate:nil];
+        }
+    }
+    return nil;
+}
 
 #pragma mark - FTXVodPlayerDelegate
 
 - (void)onPlayerPipRequestStart {
-    [self.pipFlutterApi onPipEventEvent:@{@"event" : @(EVENT_PIP_MODE_REQUEST_START)} completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_pipEventSink success:@{@"event" : @(EVENT_PIP_MODE_REQUEST_START)}];
 }
 
 - (void)onPlayerPipStateDidStart {
-    [self.pipFlutterApi onPipEventEvent:@{@"event" : @(EVENT_PIP_MODE_ALREADY_ENTER)} completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_pipEventSink success:@{@"event" : @(EVENT_PIP_MODE_ALREADY_ENTER)}];
 }
 
 - (void)onPlayerPipStateWillStop {
-    [self.pipFlutterApi onPipEventEvent:@{@"event" : @(EVENT_PIP_MODE_WILL_EXIT)} completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_pipEventSink success:@{@"event" : @(EVENT_PIP_MODE_WILL_EXIT)}];
 }
 
 - (void)onPlayerPipStateDidStop {
-    [self.pipFlutterApi onPipEventEvent:@{@"event" : @(EVENT_PIP_MODE_ALREADY_EXIT)} completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_pipEventSink success:@{@"event" : @(EVENT_PIP_MODE_ALREADY_EXIT)}];
 }
 
 - (void)onPlayerPipStateError:(NSInteger)errorId {
-    [self.pipFlutterApi onPipEventEvent:@{@"event" : @(errorId)} completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_pipEventSink success:@{@"event" : @(errorId)}];
 }
 
 - (void)onPlayerPipStateRestoreUI:(double)playTime {
-    [self.pipFlutterApi onPipEventEvent:@{@"event" : @(EVENT_PIP_MODE_RESTORE_UI), EVENT_PIP_PLAY_TIME : @(playTime)} completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_pipEventSink success:@{@"event" : @(EVENT_PIP_MODE_RESTORE_UI), EVENT_PIP_PLAY_TIME : @(playTime)}];
 }
 
 #pragma mark - orientation
@@ -216,11 +241,9 @@ SuperPlayerPlugin* instance;
     }
     if(tempOrientationCode != mCurrentOrientation) {
         mCurrentOrientation = tempOrientationCode;
-        [self.pluginFlutterApi onNativeEventEvent:@{
+        [_eventSink success:@{
             @"event" : @(EVENT_ORIENTATION_CHANGED),
-            EXTRA_NAME_ORIENTATION : @(tempOrientationCode)} completion:^(FlutterError * _Nullable error) {
-            FTXLOGE(@"callback message error:%@", error);
-        }];
+            EXTRA_NAME_ORIENTATION : @(tempOrientationCode)}];
     }
 }
 
@@ -228,10 +251,8 @@ SuperPlayerPlugin* instance;
 
 - (nullable PlayerMsg *)createLivePlayerWithError:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
     FTXLivePlayer* player = [[FTXLivePlayer alloc] initWithRegistrar:self.registrar];
-    player.delegate = self;
     NSNumber *playerId = player.playerId;
     _players[playerId] = player;
-    FTXLOGI(@"createLivePlayer :%@", playerId);
     return [TXCommonUtil playerMsgWith:playerId];
 }
 
@@ -240,7 +261,6 @@ SuperPlayerPlugin* instance;
     player.delegate = self;
     NSNumber *playerId = player.playerId;
     _players[playerId] = player;
-    FTXLOGI(@"createVodPlayer :%@", playerId);
     return [TXCommonUtil playerMsgWith:playerId];
 }
 
@@ -340,7 +360,7 @@ SuperPlayerPlugin* instance;
 }
 
 - (nullable DoubleMsg *)getSystemVolumeWithError:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
-    NSNumber *volume = [NSNumber numberWithFloat:[self.audioManager getVolume]];
+    NSNumber *volume = [NSNumber numberWithFloat:[audioManager getVolume]];
     return [TXCommonUtil doubleMsgWith:volume.doubleValue];
 }
 
@@ -370,7 +390,7 @@ SuperPlayerPlugin* instance;
     if (volumeNum.floatValue > 1) {
         volumeNum = [NSNumber numberWithFloat:1];
     }
-    [self.audioManager setVolume:volumeNum.floatValue];
+    [audioManager setVolume:volumeNum.floatValue];
 }
 
 - (void)registerSysBrightnessIsRegister:(BoolMsg *)isRegister error:(FlutterError * _Nullable __autoreleasing *)error {
@@ -410,9 +430,8 @@ SuperPlayerPlugin* instance;
         @(EVENT_RESULT) : @(blockResult),
         @(EVENT_REASON) : blockReason,
     };
-    [self.pluginFlutterApi onSDKListenerEvent:[TXCommonUtil getParamsWithEvent:EVENT_ON_LICENCE_LOADED withParams:param] completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_eventSink success:[SuperPlayerPlugin getParamsWithEvent:EVENT_ON_LICENCE_LOADED withParams:param]];
+    
 }
 
 - (void)onCustomHttpDNS:(NSString *)hostName ipList:(NSMutableArray<NSString *> *)list {

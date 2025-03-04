@@ -6,11 +6,16 @@ final TXFlutterDownloadApi _api = TXFlutterDownloadApi();
 /// include features:
 /// 1. Video predownlaod
 /// 2. Video download
-class TXVodDownloadController implements TXDownloadFlutterAPI {
-  static const String TAG = 'TXVodDownloadController';
+class TXVodDownloadController {
+  static const String TAG = 'TXVodDownlaodController';
   static TXVodDownloadController? _instance;
 
   static TXVodDownloadController get instance => _sharedInstance();
+
+  StreamSubscription? _downloadEventSubscription;
+  final StreamController<Map<dynamic, dynamic>> _downloadEventStreamController = StreamController.broadcast();
+
+  Stream<Map<dynamic, dynamic>> get onDownloadEventBroadcast => _downloadEventStreamController.stream;
 
   Map<int, _PreloadListener> _preloadListeners = {};
   Map<int, _PreloadListener> _fileIdBeforeStartListeners = {};
@@ -26,7 +31,9 @@ class TXVodDownloadController implements TXDownloadFlutterAPI {
   }
 
   TXVodDownloadController._createInstance() {
-    TXDownloadFlutterAPI.setUp(this);
+    EventChannel eventChannel = EventChannel("cloud.tencent.com/txvodplayer/download/event");
+    _downloadEventSubscription =
+        eventChannel.receiveBroadcastStream('event').listen(_eventHandler, onError: _errorHandler);
   }
 
   /// Start pre-downloading.
@@ -82,8 +89,7 @@ class TXVodDownloadController implements TXDownloadFlutterAPI {
       ..appId = txPlayInfoParams.appId
       ..pSign = txPlayInfoParams.psign
       ..preloadSizeMB = preloadSizeMB
-      ..preferredResolution = preferredResolution
-      ..httpHeader = txPlayInfoParams.httpHeader);
+      ..preferredResolution = preferredResolution);
     _fileIdBeforeStartListeners[tmpPreloadTaskId] = _PreloadListener()
       ..onCompleteListener = onCompleteListener
       ..onErrorListener = onErrorListener
@@ -232,32 +238,11 @@ class TXVodDownloadController implements TXDownloadFlutterAPI {
     return mediaInfo;
   }
 
-  @override
-  void onDownloadEvent(Map<String, Object> event) {
-    LogUtils.d(TAG, 'onDownloadEvent _eventHandler, event= $event');
-    final Map<dynamic, dynamic> map = event;
-    int eventCode = map["event"];
-    switch (eventCode) {
-      case TXVodPlayEvent.EVENT_DOWNLOAD_START:
-      case TXVodPlayEvent.EVENT_DOWNLOAD_PROGRESS:
-      case TXVodPlayEvent.EVENT_DOWNLOAD_STOP:
-      case TXVodPlayEvent.EVENT_DOWNLOAD_FINISH:
-        _downlodOnStateChangeListener?.call(eventCode, _getDownloadInfoFromMap(map));
-        break;
-      case TXVodPlayEvent.EVENT_DOWNLOAD_ERROR:
-        TXVodDownloadMediaInfo info = _getDownloadInfoFromMap(map);
-        int errorCode = map["errorCode"];
-        String errorMsg = map["errorMsg"];
-        _downlodOnErrorListener?.call(errorCode, errorMsg, info);
-        break;
-      default:
-        break;
+  _eventHandler(event) {
+    if (null == event) {
+      return;
     }
-  }
-
-  @override
-  void onPreDownloadEvent(Map<String, Object> event) {
-    LogUtils.d(TAG, 'onPreDownloadEvent _eventHandler, event= $event');
+    LogUtils.d(TAG, '_eventHandler, event= $event');
     final Map<dynamic, dynamic> map = event;
     int eventCode = map["event"];
     switch (eventCode) {
@@ -297,10 +282,25 @@ class TXVodDownloadController implements TXDownloadFlutterAPI {
           _fileIdBeforeStartListeners.remove(tmpTaskId);
         }
         break;
+      case TXVodPlayEvent.EVENT_DOWNLOAD_START:
+      case TXVodPlayEvent.EVENT_DOWNLOAD_PROGRESS:
+      case TXVodPlayEvent.EVENT_DOWNLOAD_STOP:
+      case TXVodPlayEvent.EVENT_DOWNLOAD_FINISH:
+        _downlodOnStateChangeListener?.call(eventCode, _getDownloadInfoFromMap(map));
+        break;
+      case TXVodPlayEvent.EVENT_DOWNLOAD_ERROR:
+        TXVodDownloadMediaInfo info = _getDownloadInfoFromMap(map);
+        int errorCode = map["errorCode"];
+        String errorMsg = map["errorMsg"];
+        _downlodOnErrorListener?.call(errorCode, errorMsg, info);
+        break;
       default:
         break;
     }
+    _downloadEventStreamController.add(event);
   }
+
+  _errorHandler(error) {}
 
 }
 

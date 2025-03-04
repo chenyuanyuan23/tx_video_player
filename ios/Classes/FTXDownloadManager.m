@@ -1,13 +1,13 @@
 // Copyright (c) 2022 Tencent. All rights reserved.
 
 #import "SuperPlayerPlugin.h"
+#import "FTXPlayerEventSinkQueue.h"
 #import "FTXEvent.h"
 #import "FTXDownloadManager.h"
 #import "FTXEvent.h"
 #import "TXCommonUtil.h"
 #import "FtxMessages.h"
 #import "TXPredownloadFileHelperDelegate.h"
-#import "FTXLog.h"
 
 #if __has_include(<TXLiteAVSDK_Player/TXVodPreloadManager.h>)
 #import <TXLiteAVSDK_Player/TXVodPreloadManager.h>
@@ -24,79 +24,64 @@
 #endif
 
 
-@interface FTXDownloadManager ()<TXVodPreloadManagerDelegate, TXVodDownloadDelegate, TXFlutterDownloadApi>
+@interface FTXDownloadManager ()<FlutterStreamHandler, TXVodPreloadManagerDelegate, TXVodDownloadDelegate, TXFlutterDownloadApi>
 
 @property (nonatomic, strong) dispatch_queue_t mPreloadQueue;
 @property (atomic, strong) NSMutableArray *delegateArray;
-@property (atomic, assign) BOOL isInitDownloadListener;
-@property (nonatomic, strong) TXDownloadFlutterAPI* downloadFlutterApi;
 
 @end
 
-@implementation FTXDownloadManager
+@implementation FTXDownloadManager {
+    FlutterEventChannel *_eventChannel;
+    FTXPlayerEventSinkQueue *_eventSink;
+}
 
 - (instancetype)initWithRegistrar:(id<FlutterPluginRegistrar>)registrar
 {
     if (self = [self init]) {
-        SetUpTXFlutterDownloadApi([registrar messenger], self);
-        self.mPreloadQueue = dispatch_queue_create([@"cloud.tencent.com.preload" UTF8String], NULL);
+        TXFlutterDownloadApiSetup([registrar messenger], self);
+        
+        _eventSink = [FTXPlayerEventSinkQueue new];
+        _eventChannel = [FlutterEventChannel eventChannelWithName:@"cloud.tencent.com/txvodplayer/download/event" binaryMessenger:[registrar messenger]];
+        [_eventChannel setStreamHandler:self];
+        [[TXVodDownloadManager shareInstance] setDelegate:self];
+        self.mPreloadQueue = dispatch_queue_create(@"cloud.tencent.com.preload", NULL);
         self.delegateArray = [[NSMutableArray alloc] init];
-        self.isInitDownloadListener = NO;
-        self.downloadFlutterApi = [[TXDownloadFlutterAPI alloc] initWithBinaryMessenger:[registrar messenger]];
     }
     return self;
 }
 
-- (void)initDownloadListenerIfNeed{
-    if (self.isInitDownloadListener == NO) {
-        self.isInitDownloadListener = YES;
-        [[TXVodDownloadManager shareInstance] setDelegate:self];
-    }
-}
-
 - (void)destroy
 {
-    [[TXVodDownloadManager shareInstance] setDelegate:nil];
+    [_eventChannel setStreamHandler:nil];
+    _eventChannel = nil;
+    
+    [_eventSink setDelegate:nil];
+    _eventSink = nil;
 }
 
-- (void)onPreLoadStartEvent:(long)tmpTaskId taskID:(int)taskID fileId:(NSString *)fileId url:(NSString *)url param:(NSDictionary *)param {
+- (void)onStartEvent:(long)tmpTaskId taskID:(int)taskID fileId:(NSString *)fileId url:(NSString *)url param:(NSDictionary *)param {
     __block NSMutableDictionary *dict = [NSMutableDictionary dictionary];
     [dict setObject:@(tmpTaskId) forKey:@"tmpTaskId"];
     [dict setObject:@(taskID) forKey:@"taskId"];
-    if (fileId) {
-        [dict setObject:fileId forKey:@"fileId"];
-    }
-    if (url) {
-        [dict setObject:url forKey:@"url"];
-    }
-    if (param) {
-        [dict setObject:param forKey:@"param"];
-    }
-    [self onPreloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_PREDOWNLOAD_ON_START withParams:dict]];
+    [dict setObject:fileId forKey:@"fileId"];
+    [dict setObject:url forKey:@"url"];
+    [dict setObject:param forKey:@"param"];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_PREDOWNLOAD_ON_START withParams:dict]];
 }
 
-- (void)onPreLoadErrorEvent:(long)tmpTaskId taskId:(int)taskID url:(NSString *)url error:(NSError *)error {
+- (void)onErrorEvent:(long)tmpTaskId taskId:(int)taskID url:(NSString *)url error:(NSError *)error {
     __block NSMutableDictionary *dict = [NSMutableDictionary dictionary];
     if (tmpTaskId >= 0) {
         [dict setObject:@(tmpTaskId) forKey:@"tmpTaskId"];
     }
     [dict setObject:@(taskID) forKey:@"taskId"];
-    if (url) {
-        [dict setObject:url forKey:@"url"];
-    }
+    [dict setObject:url forKey:@"url"];
     [dict setObject:@(error.code) forKey:@"code"];
     if (nil != error.userInfo.description) {
         [dict setObject:error.userInfo.description forKey:@"msg"];
     }
-    [self onPreloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_PREDOWNLOAD_ON_ERROR withParams:dict]];
-}
-
-- (void)onPreloadCallback:(NSDictionary<NSString *, id> *)arg_event {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self.downloadFlutterApi onPreDownloadEventEvent:arg_event completion:^(FlutterError * _Nullable error) {
-            FTXLOGE(@"callback message error:%@", error);
-        }];
-    });
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_PREDOWNLOAD_ON_ERROR withParams:dict]];
 }
 
 - (void)removePreDelegate:(TXPredownloadFileHelperDelegate*)delegate {
@@ -113,6 +98,39 @@
     }
 }
 
+#pragma mark - FlutterStreamHandler
+
+- (FlutterError* _Nullable)onListenWithArguments:(id _Nullable)arguments
+                                       eventSink:(FlutterEventSink)events
+{
+    if ([arguments isKindOfClass:NSString.class]) {
+        if ([arguments isEqualToString:@"event"]) {
+            [_eventSink setDelegate:events];
+        }
+    }
+    return nil;
+}
+
+- (FlutterError* _Nullable)onCancelWithArguments:(id _Nullable)arguments
+{
+    if ([arguments isKindOfClass:NSString.class]) {
+        if ([arguments isEqualToString:@"event"]) {
+            [_eventSink setDelegate:nil];
+        }
+    }
+    return nil;
+}
+
+
++ (NSDictionary *)getParamsWithEvent:(int)EvtID withParams:(NSDictionary *)params
+{
+    __block NSMutableDictionary<NSString*,NSObject*> *dict = [NSMutableDictionary dictionaryWithObject:@(EvtID) forKey:@"event"];
+    if (params != nil && params.count != 0) {
+        [dict addEntriesFromDictionary:params];
+    }
+    return dict;
+}
+
 #pragma mark - TXVodPreloadManager delegate
 
 - (void)onComplete:(int)taskID url:(NSString *)url
@@ -120,12 +138,12 @@
     __block NSMutableDictionary *dict = [NSMutableDictionary dictionary];
     [dict setObject:@(taskID) forKey:@"taskId"];
     [dict setObject:url forKey:@"url"];
-    [self onPreloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_PREDOWNLOAD_ON_COMPLETE withParams:dict]];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_PREDOWNLOAD_ON_COMPLETE withParams:dict]];
 }
 
 - (void)onError:(int)taskID url:(NSString *)url error:(NSError *)error
 {
-    [self onPreLoadErrorEvent:-1 taskId:taskID url:url error:error];
+    [self onErrorEvent:-1 taskId:taskID url:url error:error];
 }
 
 #pragma mark - TXDownloadManager
@@ -214,22 +232,22 @@
 
 /// Download started.
 - (void)onDownloadStart:(TXVodDownloadMediaInfo *)mediaInfo {
-    [self onDownloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_DOWNLOAD_START withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_DOWNLOAD_START withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
 }
 
 /// Download progress.
 - (void)onDownloadProgress:(TXVodDownloadMediaInfo *)mediaInfo {
-    [self onDownloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_DOWNLOAD_PROGRESS withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_DOWNLOAD_PROGRESS withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
 }
 
 /// Download stopped.
 - (void)onDownloadStop:(TXVodDownloadMediaInfo *)mediaInfo {
-    [self onDownloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_DOWNLOAD_STOP withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_DOWNLOAD_STOP withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
 }
 
 /// Download completed.
 - (void)onDownloadFinish:(TXVodDownloadMediaInfo *)mediaInfo {
-    [self onDownloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_DOWNLOAD_FINISH withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_DOWNLOAD_FINISH withParams:[self buildMapFromDownloadMediaInfo:mediaInfo]]];
 }
 
 /// Download error.
@@ -237,7 +255,7 @@
     NSMutableDictionary *dict = [self buildMapFromDownloadMediaInfo:mediaInfo];
     [dict setValue:@(code) forKey:@"errorCode"];
     [dict setValue:msg forKey:@"errorMsg"];
-    [self onDownloadCallback:[TXCommonUtil getParamsWithEvent:EVENT_DOWNLOAD_ERROR withParams:dict]];
+    [_eventSink success:[FTXDownloadManager getParamsWithEvent:EVENT_DOWNLOAD_ERROR withParams:dict]];
 }
 
 /**
@@ -256,17 +274,10 @@
     return 0;
 }
 
-- (void)onDownloadCallback:(NSDictionary<NSString *, id> *)arg_event {
-    [self.downloadFlutterApi onDownloadEventEvent:arg_event completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
-}
-
 #pragma mark TXFlutterDownloadApi
 
 - (nullable BoolMsg *)deleteDownloadMediaInfoMsg:(nonnull TXVodDownloadMediaMsg *)msg error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
     TXVodDownloadMediaInfo *mediaInfo = [self parseMediaInfoFromInfo:msg.quality url:msg.url appId:msg.appId fileId:msg.fileId name:msg.userName];
-    [[TXVodDownloadManager shareInstance] stopDownload:mediaInfo];
     BOOL deleteResult = [[TXVodDownloadManager shareInstance] deleteDownloadMediaInfo:mediaInfo];
     return [TXCommonUtil boolMsgWith:deleteResult];
 }
@@ -288,7 +299,6 @@
 }
 
 - (void)resumeDownloadMsg:(nonnull TXVodDownloadMediaMsg *)msg error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
-    [self initDownloadListenerIfNeed];
     TXVodDownloadMediaInfo *mediaInfo = [self parseMediaInfoFromInfo:msg.quality url:msg.url appId:msg.appId fileId:msg.fileId name:msg.userName];
     if (nil != mediaInfo) {
         TXVodDownloadDataSource *dataSource = mediaInfo.dataSource;
@@ -305,7 +315,6 @@
 }
 
 - (void)startDownloadMsg:(nonnull TXVodDownloadMediaMsg *)msg error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
-    [self initDownloadListenerIfNeed];
     if(nil != msg.url && ![msg.url isEqual:[NSNull null]]) {
         [[TXVodDownloadManager shareInstance] startDownload:msg.userName url:msg.url];
     } else if(nil != msg.appId && nil != msg.fileId && ![msg.fileId isEqual:[NSNull null]]) {
@@ -334,7 +343,6 @@
 }
 
 - (void)stopDownloadMsg:(nonnull TXVodDownloadMediaMsg *)msg error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
-    [self initDownloadListenerIfNeed];
     TXVodDownloadMediaInfo *mediaInfo = [self parseMediaInfoFromInfo:msg.quality url:msg.url appId:msg.appId fileId:msg.fileId name:msg.userName];
     [[TXVodDownloadManager shareInstance] stopDownload:mediaInfo];
 }
@@ -355,14 +363,13 @@
         params.appId = (msg.appId != nil && [msg.appId isKindOfClass:[NSNumber class]]) ? [msg.appId intValue] : 0;
         params.fileId = fileId;
         params.sign = (msg.pSign != nil && [msg.pSign isKindOfClass:[NSString class]]) ? msg.pSign : @"";
-        params.headers = msg.httpHeader != nil ? msg.httpHeader : @{};
         __block TXPredownloadFileHelperDelegate *delegate = [[TXPredownloadFileHelperDelegate alloc] initWithBlock:tmpTaskId start:^(long tmpTaskId, int taskID, NSString * _Nonnull fileId, NSString * _Nonnull url, NSDictionary * _Nonnull param) {
-            [self onPreLoadStartEvent:tmpTaskId taskID:taskID fileId:fileId url:url param:param];
+            [self onStartEvent:tmpTaskId taskID:taskID fileId:fileId url:url param:param];
         } complete:^(int taskID, NSString * _Nonnull url) {
             [self onComplete:taskID url:url];
             [self removePreDelegate:delegate];
         } error:^(long tmpTaskId, int taskID, NSString * _Nonnull url, NSError * _Nonnull error) {
-            [self onPreLoadErrorEvent:-1 taskId:taskID url:url error:error];
+            [self onErrorEvent:-1 taskId:taskID url:url error:error];
             [self removePreDelegate:delegate];
         }];
         // retain delegate
@@ -372,7 +379,7 @@
                                                             preferredResolution:preferredResolution
                                                                        delegate:delegate];
         if (isUrlPreload && tmpTaskId >= 0) {
-            [self onPreLoadStartEvent:tmpTaskId taskID:taskID fileId:fileId url:msg.playUrl param:@{}];
+            [self onStartEvent:tmpTaskId taskID:taskID fileId:fileId url:msg.playUrl param:@{}];
         }
     });
 }

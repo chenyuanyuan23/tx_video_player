@@ -92,8 +92,6 @@ class FTXVodPlayConfig {
   /// 媒资类型，默认auto类型, 取值参考 see[TXVodPlayEvent]
   int mediaType = TXVodPlayEvent.MEDIA_TYPE_AUTO;
 
-  int encryptedMp4Level = TXVodPlayEvent.MP4_ENCRYPTION_LEVEL_NONE;
-
   Map<String, dynamic> toJson() {
     Map<String, dynamic> json = {};
     json["connectRetryCount"] = connectRetryCount;
@@ -116,7 +114,6 @@ class FTXVodPlayConfig {
     json["enableRenderProcess"] = enableRenderProcess;
     json["preferredResolution"] = preferredResolution.toString();
     json["mediaType"] = mediaType.toString();
-    json["encryptedMp4Level"] = encryptedMp4Level.toString();
     return json;
   }
 
@@ -142,7 +139,6 @@ class FTXVodPlayConfig {
       enableRenderProcess: enableRenderProcess,
       preferredResolution: preferredResolution,
       mediaType: mediaType,
-      encryptedMp4Level: encryptedMp4Level,
     );
   }
 }

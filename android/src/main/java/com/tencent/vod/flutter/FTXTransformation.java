@@ -76,7 +76,6 @@ public class FTXTransformation {
             playConfig.setPreferredResolution(configPlayerMsg.getPreferredResolution());
         }
         playConfig.setMediaType(configPlayerMsg.getMediaType().intValue());
-        playConfig.setEncryptedMp4Level(configPlayerMsg.getEncryptedMp4Level().intValue());
         return playConfig;
     }
 

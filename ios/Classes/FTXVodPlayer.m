@@ -1,6 +1,7 @@
 // Copyright (c) 2022 Tencent. All rights reserved.
 
 #import "FTXVodPlayer.h"
+#import "FTXPlayerEventSinkQueue.h"
 #import "FTXTransformation.h"
 #import "FTXLiteAVSDKHeader.h"
 #import <stdatomic.h>
@@ -12,19 +13,17 @@
 #import "TXCommonUtil.h"
 #import "FTXLog.h"
 #import <stdatomic.h>
-#import "FTXImgTools.h"
 
 static const int uninitialized = -1;
 static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
 
-@interface FTXVodPlayer ()<FlutterTexture, TXVodPlayListener, TXVideoCustomProcessDelegate, TXFlutterVodPlayerApi>
+@interface FTXVodPlayer ()<FlutterStreamHandler, FlutterTexture, TXVodPlayListener, TXVideoCustomProcessDelegate, TXFlutterVodPlayerApi>
 
 @property (nonatomic, strong) UIView *txPipView;
 @property (nonatomic, assign) BOOL hasEnteredPipMode;
 @property (nonatomic, assign) BOOL restoreUI;
 @property (atomic, assign) BOOL isStoped;
 @property (atomic) BOOL isTerminate;
-@property (nonatomic, strong) TXVodPlayerFlutterAPI* vodFlutterApi;
 
 @end
 /**
@@ -33,6 +32,10 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
 @implementation FTXVodPlayer {
     TXVodPlayer *_txVodPlayer;
     TXImageSprite *_txImageSprite;
+    FTXPlayerEventSinkQueue *_eventSink;
+    FTXPlayerEventSinkQueue *_netStatusSink;
+    FlutterEventChannel *_eventChannel;
+    FlutterEventChannel *_netStatusChannel;
     // The latest frame.
     CVPixelBufferRef _Atomic _latestPixelBuffer;
     // The old frame.
@@ -65,8 +68,14 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
         playerMainqueue = dispatch_get_main_queue();
         self.hasEnteredPipMode = NO;
         self.restoreUI = NO;
-        SetUpTXFlutterVodPlayerApiWithSuffix([registrar messenger], self, [self.playerId stringValue]);
-        self.vodFlutterApi = [[TXVodPlayerFlutterAPI alloc] initWithBinaryMessenger:[registrar messenger] messageChannelSuffix:[self.playerId stringValue]];
+        _eventSink = [FTXPlayerEventSinkQueue new];
+        _netStatusSink = [FTXPlayerEventSinkQueue new];
+        
+        _eventChannel = [FlutterEventChannel eventChannelWithName:[@"cloud.tencent.com/txvodplayer/event/" stringByAppendingString:[self.playerId stringValue]] binaryMessenger:[registrar messenger]];
+        [_eventChannel setStreamHandler:self];
+        
+        _netStatusChannel = [FlutterEventChannel eventChannelWithName:[@"cloud.tencent.com/txvodplayer/net/" stringByAppendingString:[self.playerId stringValue]] binaryMessenger:[registrar messenger]];
+        [_netStatusChannel setStreamHandler:self];
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onApplicationTerminateClick) name:UIApplicationWillTerminateNotification object:nil];
     }
@@ -144,6 +153,23 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
         CVPixelBufferRelease(_lastBuffer);
         _lastBuffer = nil;
     }
+
+    if (nil != _eventSink) {
+        [_eventSink setDelegate:nil];
+        _eventSink = nil;
+    }
+    if (nil != _netStatusSink) {
+        [_netStatusSink setDelegate:nil];
+        _netStatusSink = nil;
+    }
+    if (nil != _eventChannel) {
+        [_eventChannel setStreamHandler:nil];
+        _eventChannel = nil;
+    }
+    if (nil != _netStatusChannel) {
+        [_netStatusChannel setStreamHandler:nil];
+        _netStatusChannel = nil;
+    }
     [self releaseImageSprite];
 }
 
@@ -186,11 +212,6 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
     if (_txVodPlayer == nil) {
         _txVodPlayer = [TXVodPlayer new];
         _txVodPlayer.vodDelegate = self;
-        TXVodPlayConfig *vodConfig = [[TXVodPlayConfig alloc] init];
-        NSMutableDictionary<NSString *, id> *newExtInfoMap = [NSMutableDictionary dictionary];
-        [newExtInfoMap setObject:@(0) forKey:@"450"];
-        [vodConfig setExtInfoMap:newExtInfoMap];
-        [_txVodPlayer setConfig:vodConfig];
         [self setupPlayerWithBool:onlyAudio];
     }
     return [NSNumber numberWithLongLong:_textureId];
@@ -384,6 +405,44 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
     return nil;
 }
 
+
++ (NSDictionary *)getParamsWithEvent:(int)EvtID withParams:(NSDictionary *)params
+{
+    NSMutableDictionary<NSString*,NSObject*> *dict = [NSMutableDictionary dictionaryWithObject:@(EvtID) forKey:@"event"];
+    if (params != nil && params.count != 0) {
+        [dict addEntriesFromDictionary:params];
+    }
+    return dict;
+}
+
+#pragma mark - FlutterStreamHandler
+
+- (FlutterError* _Nullable)onListenWithArguments:(id _Nullable)arguments
+                                       eventSink:(FlutterEventSink)events
+{
+    if ([arguments isKindOfClass:NSString.class]) {
+        if ([arguments isEqualToString:@"event"]) {
+            [_eventSink setDelegate:events];
+        }else if ([arguments isEqualToString:@"net"]) {
+            [_netStatusSink setDelegate:events];
+        }
+    }
+
+    return nil;
+}
+
+- (FlutterError* _Nullable)onCancelWithArguments:(id _Nullable)arguments
+{
+    if ([arguments isKindOfClass:NSString.class]) {
+        if ([arguments isEqualToString:@"event"]) {
+            [_eventSink setDelegate:nil];
+        }else if ([arguments isEqualToString:@"net"]) {
+            [_netStatusSink setDelegate:nil];
+        }
+    }
+    return nil;
+}
+
 #pragma mark - FlutterTexture
 
 - (CVPixelBufferRef _Nullable)copyPixelBuffer
@@ -403,10 +462,10 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
 
 #pragma mark - TXVodPlayListener
 
-- (void)onPlayEvent:(TXVodPlayer *)player event:(int)evtID withParam:(NSDictionary*)param
+- (void)onPlayEvent:(TXVodPlayer *)player event:(int)EvtID withParam:(NSDictionary*)param
 {
     // Hand over the first frame event timing to Flutter for shared texture processing.
-    if (evtID == CODE_ON_RECEIVE_FIRST_FRAME) {
+    if (EvtID == CODE_ON_RECEIVE_FIRST_FRAME) {
         currentPlayTime = 0;
         NSMutableDictionary *mutableDic = param.mutableCopy;
         self->videoWidth = param[@"EVT_WIDTH"];
@@ -414,26 +473,24 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
         mutableDic[@"EVT_PARAM1"] = self->videoWidth;
         mutableDic[@"EVT_PARAM2"] = self->videoHeight;
         param = mutableDic;
-    } else if(evtID == PLAY_EVT_CHANGE_RESOLUTION) {
+    } else if(EvtID == PLAY_EVT_CHANGE_RESOLUTION) {
         dispatch_async(playerMainqueue, ^{
-            self->videoWidth = param[@"EVT_PARAM1"];
-            self->videoHeight = param[@"EVT_PARAM2"];
+            self->videoWidth = param[@"EVT_WIDTH"];
+            self->videoHeight = param[@"EVT_HEIGHT"];
         });
-    } else if(evtID == PLAY_EVT_PLAY_PROGRESS) {
+    } else if(EvtID == PLAY_EVT_PLAY_PROGRESS) {
         currentPlayTime = [param[EVT_PLAY_PROGRESS] floatValue];
-    } else if(evtID == PLAY_EVT_PLAY_BEGIN) {
+    } else if(EvtID == PLAY_EVT_PLAY_BEGIN) {
         currentPlayTime = 0;
-    } else if(evtID == PLAY_EVT_START_VIDEO_DECODER) {
+    } else if(EvtID == PLAY_EVT_START_VIDEO_DECODER) {
         dispatch_async(playerMainqueue, ^{
             self->isVideoFirstFrameReceived = false;
         });
     }
-    if (evtID != PLAY_EVT_PLAY_PROGRESS) {
-        FTXLOGI(@"onPlayEvent:%i,%@", evtID, param[EVT_PLAY_DESCRIPTION]);
+    if (EvtID != PLAY_EVT_PLAY_PROGRESS) {
+        FTXLOGI(@"onPlayEvent:%i,%@", EvtID, param[EVT_PLAY_DESCRIPTION]);
     }
-    [self.vodFlutterApi onPlayerEventEvent:[TXCommonUtil getParamsWithEvent:evtID withParams:param] completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_eventSink success:[FTXVodPlayer getParamsWithEvent:EvtID withParams:param]];
 }
 
 /**
@@ -445,9 +502,7 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
  */
 - (void)onNetStatus:(TXVodPlayer *)player withParam:(NSDictionary*)param
 {
-    [self.vodFlutterApi onNetEventEvent:param completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_netStatusSink success:param];
 }
 
 /**
@@ -463,9 +518,7 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
     mutableDic[EXTRA_SUBTITLE_START_POSITION_MS] = @(subtitleData.startPositionMs);
     mutableDic[EXTRA_SUBTITLE_DURATION_MS] = @(subtitleData.durationMs);
     mutableDic[EXTRA_SUBTITLE_TRACK_INDEX] = @(subtitleData.trackIndex);
-    [self.vodFlutterApi onPlayerEventEvent:[TXCommonUtil getParamsWithEvent:EVENT_SUBTITLE_DATA withParams:mutableDic] completion:^(FlutterError * _Nullable error) {
-        FTXLOGE(@"callback message error:%@", error);
-    }];
+    [_eventSink success:[FTXVodPlayer getParamsWithEvent:EVENT_SUBTITLE_DATA withParams:mutableDic]];
 }
 
 
@@ -539,8 +592,7 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
     }
 
     UIImage *image = [UIImage imageWithContentsOfFile:imagePath];
-    // must create new obj when evey called
-    return [FTXImgTools CVPixelBufferRefFromUiImage:image];
+    return [self CVPixelBufferRefFromUiImage:image];
 }
 
 - (void)setPlayerConfig:(FTXVodPlayConfigPlayerMsg *)args
@@ -785,12 +837,6 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
         case TX_VOD_PLAYER_PIP_ERROR_TYPE_PIP_NOT_RUNNING:
             type = ERROR_IOS_PIP_NOT_RUNNING;
             break;
-        case TX_VOD_PLAYER_PIP_ERROR_TYPE_PIP_START_TIMEOUT:
-            type = ERROR_IOS_PIP_START_TIME_OUT;
-            break;
-        default:
-            type = errorType;
-            break;
     }
     self.hasEnteredPipMode = NO;
     FTXLOGE(@"[onPlayer], pictureInPictureErrorDidOccur errorType= %ld", type);
@@ -804,6 +850,71 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
 
 
 - (void)onPlayer:(TXVodPlayer *)player airPlayStateDidChange:(TX_VOD_PLAYER_AIRPLAY_STATE)airPlayState withParam:(NSDictionary *)param {
+}
+
+
+
+#pragma mark - Convert UIImage to CVPixelBufferRef
+
+- (CVPixelBufferRef)CVPixelBufferRefFromUiImage:(UIImage *)img {
+    CGSize size = img.size;
+    CGImageRef image = [img CGImage];
+    
+    BOOL hasAlpha = CGImageRefContainsAlpha(image);
+    CFDictionaryRef empty = CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    NSDictionary *options = [NSDictionary dictionaryWithObjectsAndKeys:
+                             [NSNumber numberWithBool:YES], kCVPixelBufferCGImageCompatibilityKey,
+                             [NSNumber numberWithBool:YES], kCVPixelBufferCGBitmapContextCompatibilityKey,
+                             empty, kCVPixelBufferIOSurfacePropertiesKey,
+                             nil];
+    CVPixelBufferRef pxbuffer = NULL;
+    CVReturn status = CVPixelBufferCreate(kCFAllocatorDefault, size.width, size.height, inputPixelFormat(), (__bridge CFDictionaryRef) options, &pxbuffer);
+    NSParameterAssert(status == kCVReturnSuccess && pxbuffer != NULL);
+    
+    CVPixelBufferLockBaseAddress(pxbuffer, 0);
+    void *pxdata = CVPixelBufferGetBaseAddress(pxbuffer);
+    NSParameterAssert(pxdata != NULL);
+    
+    CGColorSpaceRef rgbColorSpace = CGColorSpaceCreateDeviceRGB();
+    uint32_t bitmapInfo = bitmapInfoWithPixelFormatType(inputPixelFormat(), (bool)hasAlpha);
+    CGContextRef context = CGBitmapContextCreate(pxdata, size.width, size.height, 8, CVPixelBufferGetBytesPerRow(pxbuffer), rgbColorSpace, bitmapInfo);
+    NSParameterAssert(context);
+    CGContextDrawImage(context, CGRectMake(0, 0, CGImageGetWidth(image), CGImageGetHeight(image)), image);
+    CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+    CGColorSpaceRelease(rgbColorSpace);
+    CGContextRelease(context);
+    return pxbuffer;
+}
+
+static OSType inputPixelFormat(){
+    return kCVPixelFormatType_32BGRA;
+}
+
+static uint32_t bitmapInfoWithPixelFormatType(OSType inputPixelFormat, bool hasAlpha){
+    if (inputPixelFormat == kCVPixelFormatType_32BGRA) {
+        uint32_t bitmapInfo = kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host;
+        if (!hasAlpha) {
+            bitmapInfo = kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Host;
+        }
+        return bitmapInfo;
+    }else if (inputPixelFormat == kCVPixelFormatType_32ARGB) {
+        uint32_t bitmapInfo = kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Big;
+        return bitmapInfo;
+    }else{
+        return 0;
+    }
+}
+
+// Check alpha value
+BOOL CGImageRefContainsAlpha(CGImageRef imageRef) {
+    if (!imageRef) {
+        return NO;
+    }
+    CGImageAlphaInfo alphaInfo = CGImageGetAlphaInfo(imageRef);
+    BOOL hasAlpha = !(alphaInfo == kCGImageAlphaNone ||
+                      alphaInfo == kCGImageAlphaNoneSkipFirst ||
+                      alphaInfo == kCGImageAlphaNoneSkipLast);
+    return hasAlpha;
 }
 
 #pragma mark - TXFlutterVodPlayerApi
@@ -1046,19 +1157,9 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
     if (nil != _txVodPlayer) {
         if (playerMsg.value && [playerMsg.value count] != 0) {
             id value = playerMsg.value[0];
-            NSString *key = playerMsg.key;
-            // HEVC 降级播放参数进行特殊判断，保证 flutter 层接口一致
-            if ([key isEqualToString:VOD_KEY_VIDEO_CODEC_TYPE] && [value isKindOfClass:[NSString class]]) {
-                if ([(NSString *) value isEqualToString:@"video/hevc"]) {
-                    [_txVodPlayer setExtentOptionInfo:@{
-                            VOD_KEY_VIDEO_CODEC_TYPE : @(kCMVideoCodecType_HEVC)
-                    }];
-                }
-            } else {
-                [_txVodPlayer setExtentOptionInfo:@{
-                        key : value
-                }];
-            }
+            [_txVodPlayer setExtentOptionInfo:@{
+                playerMsg.key : value
+            }];
         }
     }
 }
