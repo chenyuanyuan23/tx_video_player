@@ -23,15 +23,16 @@ player plugin.
 
   # 自动寻找所有 xcframeworks
   frameworks_dir = 'libs'
+  version = '12.3.0.16995'
   # 添加这部分代码
   s.prepare_command = <<-CMD
     if [ ! -d libs/TXFFmpeg.xcframework ] || [ ! -d libs/TXLiteAVSDK_Player.xcframework ] || [ ! -d libs/TXSoundTouch.xcframework ]; then
       rm -rf libs
       mkdir -p libs
-      curl -L -o LiteAVSDK_Player_iOS_12.3.0.16995.zip https://github.com/chenyuanyuan23/librarys/raw/main/com/chenyuanyuan23/frameworks/LiteAVSDK_Player_iOS_12.3.0.16995.zip
-      unzip LiteAVSDK_Player_iOS_12.3.0.16995.zip -d libs
+      curl -L -o LiteAVSDK_Player_iOS_#{version}.zip https://github.com/chenyuanyuan23/librarys/raw/main/com/chenyuanyuan23/frameworks/LiteAVSDK_Player_iOS_#{version}.zip
+      unzip LiteAVSDK_Player_iOS_#{version}.zip -d libs
       rm -rf libs/TXLiteAVSDK_ReplayKitExt.xcframework
-      rm -rf LiteAVSDK_Player_iOS_12.3.0.16995.zip
+      rm -rf LiteAVSDK_Player_iOS_#{version}.zip
     fi
   CMD
 
