@@ -28,10 +28,10 @@ player plugin.
     if [ ! -d libs/TXFFmpeg.xcframework ] || [ ! -d libs/TXLiteAVSDK_Player.xcframework ] || [ ! -d libs/TXSoundTouch.xcframework ]; then
       rm -rf libs
       mkdir -p libs
-      curl -L -o LiteAVSDK_Player_iOS_12.1.0.16597.zip https://github.com/chenyuanyuan23/librarys/raw/main/com/chenyuanyuan23/frameworks/LiteAVSDK_Player_iOS_12.1.0.16597.zip
-      unzip LiteAVSDK_Player_iOS_12.1.0.16597.zip -d libs
+      curl -L -o LiteAVSDK_Player_iOS_12.3.0.17115.zip https://github.com/chenyuanyuan23/librarys/raw/main/com/chenyuanyuan23/frameworks/LiteAVSDK_Player_iOS_12.3.0.17115.zip
+      unzip LiteAVSDK_Player_iOS_12.3.0.17115.zip -d libs
       rm -rf libs/TXLiteAVSDK_ReplayKitExt.xcframework
-      rm -rf LiteAVSDK_Player_iOS_12.1.0.16597.zip
+      rm -rf LiteAVSDK_Player_iOS_12.3.0.17115.zip
     fi
   CMD
 
