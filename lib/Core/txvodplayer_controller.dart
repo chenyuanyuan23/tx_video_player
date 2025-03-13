@@ -61,17 +61,6 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
     _create();
   }
 
-  bool get isInitialized {
-    return _initPlayer.isCompleted && _createTexture.isCompleted;
-  }
-
-  // 宽高比
-  Future<double> getAspectRatio() async {
-    if (_isNeedDisposed) return 0;
-    await _initPlayer.future;
-    return await getWidth() / await getHeight();
-  }
-  
   Future<void> _create() async {
     _playerId = await SuperPlayerPlugin.createVodPlayer();
     _vodPlayerApi = TXFlutterVodPlayerApi(messageChannelSuffix: _playerId.toString());
