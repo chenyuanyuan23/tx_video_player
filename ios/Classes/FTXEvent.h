@@ -45,6 +45,12 @@
 /// PIP function is not started.
 /// PIP功能没有启动
 #define ERROR_IOS_PIP_NOT_RUNNING            -111
+/// PIP  start time out
+/// PIP 启动超时
+#define ERROR_IOS_PIP_START_TIME_OUT            -112
+/// Insufficient permissions, currently only appears in Picture-in-Picture live streaming
+/// 权限不足，目前只出现在直播画中画
+#define ERROR_PIP_AUTH_DENIED                -201
 
 
 
@@ -121,5 +127,23 @@
 #define EXTRA_SUBTITLE_START_POSITION_MS @"startPositionMs"
 #define EXTRA_SUBTITLE_DURATION_MS @"durationMs"
 #define EXTRA_SUBTITLE_TRACK_INDEX @"trackIndex"
+
+
+// player event
+#define EVT_KEY_PLAYER_EVENT @"event"
+#define EVT_KEY_PLAYER_NET @"net"
+#define EVT_KEY_PLAYER_WIDTH @"EVT_WIDTH"
+#define EVT_KEY_PLAYER_HEIGHT @"EVT_HEIGHT"
+
+
+// net event
+#define NET_STATUS_SYSTEM_CPU @"SYSTEM_CPU"
+#define NET_STATUS_VIDEO_LOSS @"VIDEO_PACKET_LOSS"
+#define NET_STATUS_AUDIO_LOSS @"AUDIO_PACKET_LOSS"
+#define NET_STATUS_AUDIO_TOTAL_BLOCK_TIME @"AUDIO_TOTAL_BLOCK_TIME"
+#define NET_STATUS_VIDEO_TOTAL_BLOCK_TIME @"VIDEO_TOTAL_BLOCK_TIME"
+#define NET_STATUS_VIDEO_BLOCK_RATE @"VIDEO_BLOCK_RATE"
+#define NET_STATUS_AUDIO_BLOCK_RATE @"AUDIO_BLOCK_RATE"
+#define NET_STATUS_RTT @"RTT"
 
 #endif  // SUPERPLAYER_FLUTTER_IOS_CLASSES_FTXEVENT_H_

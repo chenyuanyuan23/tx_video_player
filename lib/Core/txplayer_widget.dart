@@ -3,9 +3,8 @@ part of SuperPlayer;
 
 class TXPlayerVideo extends StatefulWidget {
   final TXPlayerController controller;
-  final Stream<TXPlayerHolder>? playerStream;
 
-  TXPlayerVideo({required this.controller, this.playerStream});
+  TXPlayerVideo({required this.controller});
 
   @override
   TXPlayerVideoState createState() => TXPlayerVideoState();
@@ -14,118 +13,86 @@ class TXPlayerVideo extends StatefulWidget {
 class TXPlayerVideoState extends State<TXPlayerVideo> {
   static const TAG = "TXPlayerVideo";
   int _textureId = -1;
+  double _iosOffset = -1;
 
   StreamSubscription? streamSubscription;
-  late TXPlayerController controller;
-  TXVodPlayerController? _vodPlayerController;
+
   @override
   void initState() {
     super.initState();
-
-    controller = widget.controller;
-    _checkController();
-    _checkStreamListen();
-    _resetControllerLink();
+    _obtainTextureId();
   }
 
-  void _checkController() {
-    if (controller is! TXVodPlayerController) {
-      return;
-    }
-    _vodPlayerController = controller as TXVodPlayerController;
-    _vodPlayerController?.addListener(_onVodPlayerControllerUpdate);
+  @override
+  void didUpdateWidget(covariant TXPlayerVideo oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _obtainTextureId();
   }
 
-  void _onVodPlayerControllerUpdate() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  void _checkStreamListen() {
-    if (null != streamSubscription) {
-      streamSubscription!.cancel();
-    }
-    streamSubscription = widget.playerStream?.listen((event) {
-      controller = event.controller;
-      _resetControllerLink();
-    });
-  }
-
-  void _resetControllerLink() async {
-    int remainTextureId = await controller.textureId;
-    if (remainTextureId >= 0) {
-      if (remainTextureId != _textureId) {
-        _refreshTextureId(remainTextureId);
-      }
-    } else {
+  void _obtainTextureId() async {
+    int remainTextureId = await widget.controller.textureId;
+    if (_textureId != remainTextureId) {
       setState(() {
-        _textureId = -1;
+        _textureId = remainTextureId;
       });
-      controller.textureId.then((newTextureId) {
-        if (_textureId != newTextureId) {
-          _refreshTextureId(newTextureId);
-        }
-      });
-    }
-  }
-
-  void _refreshTextureId(int textureId) {
-    LogUtils.d(TAG, "_textureId = $textureId");
-    _textureId = textureId;
-    if (mounted) {
-      setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    TXPlayerController controller = widget.controller;
     if ((defaultTargetPlatform == TargetPlatform.android) &&
-        (controller.resizeVideoHeight! > 0 &&
-            controller.resizeVideoWidth! > 0)) {
+        (controller.resizeVideoHeight! > 0 && controller.resizeVideoWidth! > 0)) {
       return _textureId == -1
           ? Container()
           : LayoutBuilder(builder: (context, constrains) {
-              var viewWidth = constrains.maxWidth;
-              var viewHeight = constrains.maxHeight;
-              var videoWidth = controller.resizeVideoWidth!;
-              var videoHeight = controller.resizeVideoHeight!;
+        var viewWidth = constrains.maxWidth;
+        var viewHeight = constrains.maxHeight;
+        var videoWidth = controller.resizeVideoWidth!;
+        var videoHeight = controller.resizeVideoHeight!;
 
-              double left = controller.videoLeft! * viewWidth / videoWidth;
-              double top = controller.videoTop! * viewHeight / videoHeight;
-              double right = controller.videoRight! * viewWidth / videoWidth;
-              double bottom =
-                  controller.videoBottom! * viewHeight / videoHeight;
-              return Stack(
-                children: [
-                  Positioned(
-                      top: top,
-                      left: left,
-                      right: right,
-                      bottom: bottom,
-                      child: _buildRotate())
-                ],
-              );
-            });
+        double left = controller.videoLeft! * viewWidth / videoWidth;
+        double top = controller.videoTop! * viewHeight / videoHeight;
+        double right = controller.videoRight! * viewWidth / videoWidth;
+        double bottom = controller.videoBottom! * viewHeight / videoHeight;
+        return Stack(
+          children: [
+            Positioned(
+                top: top, left: left, right: right, bottom: bottom, child: Texture(textureId: _textureId))
+          ],
+        );
+      });
     } else {
-      return _textureId == -1 ? Container() : _buildRotate();
+      return _textureId == -1 ? Container() : _buildIOSRotate();
     }
   }
 
-  Widget _buildRotate() {
+  Widget _buildIOSRotate() {
     var degree = widget.controller.playerValue()?.degree;
-    var quarterTurns = (degree! / 90).floor();
-    if (quarterTurns == 0 || Platform.isIOS) {
-      return Texture(textureId: _textureId);
+    var quarterTurns = ( degree! / 90).floor();
+    if (quarterTurns == 0) {
+      return _buildIOSTexture(_textureId);
+    } else {
+      return RotatedBox(quarterTurns: quarterTurns, child: _buildIOSTexture(_textureId));
     }
-    return RotatedBox(
-        quarterTurns: -quarterTurns, child: Texture(textureId: _textureId));
+  }
+
+  Widget _buildIOSTexture(int textureId) {
+    return Stack(
+      children: [
+        Positioned(
+            top: _iosOffset,
+            left: _iosOffset,
+            right: _iosOffset,
+            bottom: _iosOffset,
+            child: Texture(textureId: textureId))
+      ],
+    );
   }
 
   @override
   void dispose() {
     streamSubscription?.cancel();
-     _vodPlayerController?.removeListener(_onVodPlayerControllerUpdate);
     super.dispose();
   }
 }
