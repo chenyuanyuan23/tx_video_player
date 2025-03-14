@@ -31,6 +31,9 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
 
   void _obtainTextureId() async {
     int remainTextureId = await widget.controller.textureId;
+    if(!mounted){
+      return;
+    }
     if (_textureId != remainTextureId) {
       setState(() {
         _textureId = remainTextureId;
