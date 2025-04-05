@@ -13,7 +13,7 @@ class TXPlayerVideo extends StatefulWidget {
 class TXPlayerVideoState extends State<TXPlayerVideo> {
   static const TAG = "TXPlayerVideo";
   int _textureId = -1;
-  double _iosOffset = -1;
+  double _iosOffset = -2;
 
   StreamSubscription? streamSubscription;
 
