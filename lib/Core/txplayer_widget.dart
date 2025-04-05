@@ -93,16 +93,20 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
   }
 
   Widget _buildIOSTexture(int textureId) {
-    return Stack(
-      children: [
-        Positioned(
-            top: _iosOffset,
-            left: _iosOffset,
-            right: _iosOffset,
-            bottom: _iosOffset,
-            child: Texture(textureId: textureId))
-      ],
-    );
+    Widget view = Texture(textureId: textureId);
+    if (Platform.isIOS) {
+      view = Stack(
+        children: [
+          Positioned(
+              top: _iosOffset,
+              left: _iosOffset,
+              right: _iosOffset,
+              bottom: _iosOffset,
+              child: view)
+        ],
+      );
+    }
+    return view;
   }
 
   @override
