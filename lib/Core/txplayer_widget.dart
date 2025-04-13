@@ -13,7 +13,7 @@ class TXPlayerVideo extends StatefulWidget {
 class TXPlayerVideoState extends State<TXPlayerVideo> {
   static const TAG = "TXPlayerVideo";
   int _textureId = -1;
-  double _iosOffset = -2;
+  double _iosOffset = -1;
 
   StreamSubscription? streamSubscription;
 
@@ -31,9 +31,6 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
 
   void _obtainTextureId() async {
     int remainTextureId = await widget.controller.textureId;
-    if (!mounted) {
-      return;
-    }
     if (_textureId != remainTextureId) {
       setState(() {
         _textureId = remainTextureId;
@@ -45,32 +42,26 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
   Widget build(BuildContext context) {
     TXPlayerController controller = widget.controller;
     if ((defaultTargetPlatform == TargetPlatform.android) &&
-        (controller.resizeVideoHeight! > 0 &&
-            controller.resizeVideoWidth! > 0)) {
+        (controller.resizeVideoHeight! > 0 && controller.resizeVideoWidth! > 0)) {
       return _textureId == -1
           ? Container()
           : LayoutBuilder(builder: (context, constrains) {
-              var viewWidth = constrains.maxWidth;
-              var viewHeight = constrains.maxHeight;
-              var videoWidth = controller.resizeVideoWidth!;
-              var videoHeight = controller.resizeVideoHeight!;
+        var viewWidth = constrains.maxWidth;
+        var viewHeight = constrains.maxHeight;
+        var videoWidth = controller.resizeVideoWidth!;
+        var videoHeight = controller.resizeVideoHeight!;
 
-              double left = controller.videoLeft! * viewWidth / videoWidth;
-              double top = controller.videoTop! * viewHeight / videoHeight;
-              double right = controller.videoRight! * viewWidth / videoWidth;
-              double bottom =
-                  controller.videoBottom! * viewHeight / videoHeight;
-              return Stack(
-                children: [
-                  Positioned(
-                      top: top,
-                      left: left,
-                      right: right,
-                      bottom: bottom,
-                      child: _buildIOSRotate())
-                ],
-              );
-            });
+        double left = controller.videoLeft! * viewWidth / videoWidth;
+        double top = controller.videoTop! * viewHeight / videoHeight;
+        double right = controller.videoRight! * viewWidth / videoWidth;
+        double bottom = controller.videoBottom! * viewHeight / videoHeight;
+        return Stack(
+          children: [
+            Positioned(
+                top: top, left: left, right: right, bottom: bottom, child: Texture(textureId: _textureId))
+          ],
+        );
+      });
     } else {
       return _textureId == -1 ? Container() : _buildIOSRotate();
     }
@@ -78,35 +69,25 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
 
   Widget _buildIOSRotate() {
     var degree = widget.controller.playerValue()?.degree;
-    var quarterTurns = (degree! / 90).floor();
-    if (Platform.isIOS) {
-      quarterTurns = 0;
-    } else if (Platform.isAndroid) {
-      quarterTurns = -quarterTurns;
-    }
+    var quarterTurns = ( degree! / 90).floor();
     if (quarterTurns == 0) {
       return _buildIOSTexture(_textureId);
     } else {
-      return RotatedBox(
-          quarterTurns: quarterTurns, child: _buildIOSTexture(_textureId));
+      return RotatedBox(quarterTurns: quarterTurns, child: _buildIOSTexture(_textureId));
     }
   }
 
   Widget _buildIOSTexture(int textureId) {
-    Widget view = Texture(textureId: textureId);
-    if (Platform.isIOS) {
-      view = Stack(
-        children: [
-          Positioned(
-              top: _iosOffset,
-              left: _iosOffset,
-              right: _iosOffset,
-              bottom: _iosOffset,
-              child: view)
-        ],
-      );
-    }
-    return view;
+    return Stack(
+      children: [
+        Positioned(
+            top: _iosOffset,
+            left: _iosOffset,
+            right: _iosOffset,
+            bottom: _iosOffset,
+            child: Texture(textureId: textureId))
+      ],
+    );
   }
 
   @override
