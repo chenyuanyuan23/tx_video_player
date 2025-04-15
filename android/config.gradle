@@ -1,10 +1,10 @@
 rootProject.ext {
-    compileSdkVersion = 31
+    compileSdkVersion = 34
     buildToolsVersion = "28.0.3"
     supportSdkVersion = "26.0.1"
     minSdkVersion = 19
     targetSdkVersion = 28
-    playerVersion = '12.3.0'
+    playerVersion = "12.4.0"
     compat = "androidx.appcompat:appcompat:1.6.1"
 
     /**

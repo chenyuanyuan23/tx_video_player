@@ -4,8 +4,8 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'super_player'
-  s.version          = '12.3.0'
-  s.summary          = 'player plugin.'
+  s.version = '12.4.0'
+  s.summary          = 'The super_player Flutter plugin is one of the sub-product SDKs of the audio/video terminal SDK (Tencent Cloud Video on Demand).'
   s.description      = <<-DESC
 player plugin.
                        DESC
@@ -37,7 +37,10 @@ player plugin.
     fi
   CMD
 
-  s.vendored_frameworks = "#{tx_frameworks}/*.xcframework"
+  s.vendored_frameworks = [
+    'localdep/FTXPiPKit.xcframework',
+    "#{tx_frameworks}/*.xcframework"
+  ]
       
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = {

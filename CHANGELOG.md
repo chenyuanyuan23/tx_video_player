@@ -1,4 +1,29 @@
 
+#### Version: 12.4.0 2025.03.31
+
+##### Features：
+
+- set Android TXLiteAVSDK_Professional to 12.4.0.17372，tag：release_pro_v12.4.0
+- set iOS TXLiteAVSDK_Professional to 12.4.17856， tag：release_pro_v12.4.0
+- The Android picture-in-picture button icon can be hidden by passing an empty string.
+- The binding method of the player texture for the controller parameter of TXPlayerVideo is no longer recommended. It is recommended to use the onRenderViewCreated method instead.
+- Fix the issue where the window size and aspect ratio of the picture do not match when Android live streaming enters picture-in-picture mode.
+- Fix the problem that after the player component enters full screen, the player listener is still on the portrait page.
+- Fix the issue that when Android enters picture-in-picture mode, there is a semi-transparent black status bar at the top of some models during the transition animation.
+
+
+#### Version: 12.3.1 2025.03.18
+
+##### Features：
+
+- set Android TXLiteAVSDK_Professional to 12.3.0.17122，tag：release_pro_v12.3.1
+- TXPlayerVideo has added a new onRenderViewCreatedListener callback. After obtaining the viewId of TXPlayerVideo, you can set the viewId to the player when needed.
+- Fix an issue that the picture-in-picture on iOS does not display correctly in the window in some cases.
+- Fix an issue that the aspect ratio of the picture-in-picture window is incorrect on Android.
+- Fix an issue that there is no picture after the player component returns from full screen.
+- Fix an issue that long-term video playback causes memory overflow on iOS.
+- Fix an issue that high-security-level DRM videos cannot be played on iOS.
+
 ### Version: 12.3.0 2025.01.21
 
 #### Features：
@@ -288,4 +313,5 @@
 
 - set Android TXLiteAVSDK_Professional to 10.2.0.11131，tag：release_player_v1.0.2
 - set iOS TXLiteAVSDK_Professional to 10.2.11418， tag：release_pro_v1.0.2
+
 

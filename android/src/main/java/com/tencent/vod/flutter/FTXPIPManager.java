@@ -325,9 +325,12 @@ public class FTXPIPManager implements TXSimpleEventBus.EventSubscriber, FtxMessa
          *                         播放器id
          */
         public PipParams(String mPlayBackAssetPath, String mPlayResumeAssetPath, String mPlayPauseAssetPath,
-                String mPlayForwardAssetPath, int mCurrentPlayerId) {
+                         String mPlayForwardAssetPath, int mCurrentPlayerId) {
             this(mPlayBackAssetPath, mPlayResumeAssetPath, mPlayPauseAssetPath, mPlayForwardAssetPath,
-                    mCurrentPlayerId, true, true, true);
+                    mCurrentPlayerId, !TXCommonUtil.isBlankStr(mPlayBackAssetPath),
+                    !TXCommonUtil.isBlankStr(mPlayForwardAssetPath)
+                    , !TXCommonUtil.isBlankStr(mPlayResumeAssetPath)
+                            && !TXCommonUtil.isBlankStr(mPlayPauseAssetPath));
         }
 
         public PipParams(String mPlayBackAssetPath, String mPlayResumeAssetPath, String mPlayPauseAssetPath,
@@ -354,6 +357,8 @@ public class FTXPIPManager implements TXSimpleEventBus.EventSubscriber, FtxMessa
             mIsNeedPlayControl = in.readByte() != 0;
             mIsPlaying = in.readByte() != 0;
             mCurrentPlayTime = in.readFloat();
+            mViewWith = in.readInt();
+            mViewHeight = in.readInt();
         }
 
         public static final Creator<PipParams> CREATOR = new Creator<PipParams>() {
@@ -401,7 +406,7 @@ public class FTXPIPManager implements TXSimpleEventBus.EventSubscriber, FtxMessa
             return mViewHeight;
         }
 
-        private AtomicInteger a = new AtomicInteger();
+        private final AtomicInteger mActionIdGenerator = new AtomicInteger();
 
         /**
          * Construct PIP parameters.
@@ -433,7 +438,7 @@ public class FTXPIPManager implements TXSimpleEventBus.EventSubscriber, FtxMessa
                         .putExtras(playOrPauseData)
                         .setPackage(activity.getPackageName());
                 Icon playIcon = mIsPlaying ? getPauseIcon(activity) : getPlayIcon(activity);
-                PendingIntent playIntent = PendingIntent.getBroadcast(activity, a.incrementAndGet(),
+                PendingIntent playIntent = PendingIntent.getBroadcast(activity, mActionIdGenerator.incrementAndGet(),
                         playOrPauseIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
                 RemoteAction playOrPauseAction = new RemoteAction(playIcon, "playOrPause", "play Or Pause", playIntent);
                 actions.add(playOrPauseAction);
@@ -504,7 +509,7 @@ public class FTXPIPManager implements TXSimpleEventBus.EventSubscriber, FtxMessa
         }
 
         @Override
-        public void writeToParcel(Parcel dest, int flags) {
+        public void writeToParcel(@NonNull Parcel dest, int flags) {
             dest.writeString(mPlayBackAssetPath);
             dest.writeString(mPlayResumeAssetPath);
             dest.writeString(mPlayPauseAssetPath);
@@ -515,14 +520,17 @@ public class FTXPIPManager implements TXSimpleEventBus.EventSubscriber, FtxMessa
             dest.writeByte((byte) (mIsNeedPlayControl ? 1 : 0));
             dest.writeByte((byte) (mIsPlaying ? 1 : 0));
             dest.writeFloat(mCurrentPlayTime);
+            dest.writeInt(mViewWith);
+            dest.writeInt(mViewHeight);
         }
+
     }
 
     /**
      * PIP control callback.
      * 画中画控制回调
      */
-    interface PipCallback {
+    public interface PipCallback {
 
         /**
          * Close PIP.

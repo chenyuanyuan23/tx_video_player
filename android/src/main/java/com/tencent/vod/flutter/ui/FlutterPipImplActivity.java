@@ -13,7 +13,6 @@ import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.res.Configuration;
 import android.graphics.Color;
-import android.graphics.SurfaceTexture;
 import android.os.Build;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
@@ -21,9 +20,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.text.TextUtils;
-import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 
@@ -34,6 +34,7 @@ import com.tencent.liteav.base.util.LiteavLog;
 import com.tencent.rtmp.ITXVodPlayListener;
 import com.tencent.rtmp.TXLiveConstants;
 import com.tencent.rtmp.TXVodPlayer;
+import com.tencent.rtmp.ui.TXCloudVideoView;
 import com.tencent.vod.flutter.FTXEvent;
 import com.tencent.vod.flutter.FTXPIPManager.PipParams;
 import com.tencent.vod.flutter.R;
@@ -43,7 +44,7 @@ import com.tencent.vod.flutter.tools.TXFlutterEngineHolder;
 import com.tencent.vod.flutter.tools.TXSimpleEventBus;
 
 
-public class FlutterPipImplActivity extends Activity implements TextureView.SurfaceTextureListener, ITXVodPlayListener,
+public class FlutterPipImplActivity extends Activity implements ITXVodPlayListener,
         ServiceConnection {
 
     private static final String TAG = "FlutterPipImplActivity";
@@ -65,11 +66,10 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     private int configWidth = 0;
     private int configHeight = 0;
 
-    private TextureView mVideoSurface;
+    private TXCloudVideoView mVideoRenderView;
     private ProgressBar mVideoProgress;
     private RelativeLayout mPipContainer;
 
-    private boolean mIsSurfaceCreated = false;
     // In picture-in-picture mode, clicking the X in the upper right corner will trigger `onStop` first.
     // Clicking the zoom button will not trigger `onStop`.
     private boolean mIsNeedToStop = false;
@@ -146,10 +146,17 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         bindAndroid12BugServiceIfNeed();
         registerPipBroadcast();
         setContentView(R.layout.activity_flutter_pip_impl);
-        mVideoSurface = findViewById(R.id.tv_video_container);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            Window window = getWindow();
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+            window.setStatusBarColor(Color.TRANSPARENT);
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+        }
+        mVideoRenderView = findViewById(R.id.tv_video_container);
         mVideoProgress = findViewById(R.id.pb_video_progress);
         mPipContainer = findViewById(R.id.rl_pip_container);
-        mVideoSurface.setSurfaceTextureListener(this);
         if (null == pipPlayerHolder) {
             LiteavLog.e(TAG, "lack pipPlayerHolder, please check the pip argument");
             finish();
@@ -262,7 +269,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     }
 
     private void configPipMode(PictureInPictureParams params) {
-        mVideoSurface.post(new Runnable() {
+        mVideoRenderView.post(new Runnable() {
             @Override
             public void run() {
                 if (VERSION.SDK_INT >= VERSION_CODES.N) {
@@ -412,7 +419,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
             // too early after returning from picture-in-picture mode, the app cannot be launched normally.
             // Therefore, a delay processing is added here.
             if (!closeImmediately) {
-                mVideoSurface.setVisibility(View.GONE);
+                mVideoRenderView.setVisibility(View.GONE);
                 mVideoProgress.setVisibility(View.GONE);
                 mMainHandler.postDelayed(new Runnable() {
                     @Override
@@ -447,10 +454,8 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
     }
 
     private void startPipVideo() {
-        if (mIsSurfaceCreated) {
-            attachSurface(new Surface(mVideoSurface.getSurfaceTexture()));
-            startPlay();
-        }
+        attachRenderView(mVideoRenderView);
+        startPlay();
     }
 
     private void startPlay() {
@@ -462,29 +467,6 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         } else {
             LiteavLog.e(TAG, "miss player when startPlay");
         }
-    }
-
-    @Override
-    public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
-        mIsSurfaceCreated = true;
-        attachSurface(new Surface(surface));
-        startPlay();
-    }
-
-    @Override
-    public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
-
-    }
-
-    @Override
-    public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
-        mIsSurfaceCreated = false;
-        return false;
-    }
-
-    @Override
-    public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
-
     }
 
     @Override
@@ -520,12 +502,12 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
         }
     }
 
-    private void attachSurface(Surface surface) {
+    private void attachRenderView(TXCloudVideoView videoView) {
         if (null != mPlayerHolder) {
             if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_VOD) {
-                mPlayerHolder.getVodPlayer().setSurface(surface);
+                mPlayerHolder.getVodPlayer().setPlayerView(videoView);
             } else if (mPlayerHolder.getPlayerType() == FTXEvent.PLAYER_LIVE) {
-                mPlayerHolder.getLivePlayer().setRenderView(mVideoSurface);
+                mPlayerHolder.getLivePlayer().setRenderView(videoView);
             } else {
                 LiteavLog.e(TAG, "unknown player type:" + mPlayerHolder.getPlayerType());
             }
@@ -595,7 +577,7 @@ public class FlutterPipImplActivity extends Activity implements TextureView.Surf
      * 为了防止画中画启动一瞬间的黑屏，组件一开始为隐藏状态，只有进入画中画之后才会显示组件
      */
     private void showComponent() {
-        mVideoSurface.setVisibility(View.VISIBLE);
+        mVideoRenderView.setVisibility(View.VISIBLE);
         mVideoProgress.setVisibility(View.VISIBLE);
         mPipContainer.setBackgroundColor(Color.parseColor("#33000000"));
     }
