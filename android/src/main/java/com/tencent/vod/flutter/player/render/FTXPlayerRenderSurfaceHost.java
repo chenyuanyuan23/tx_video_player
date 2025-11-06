@@ -12,4 +12,12 @@ public interface FTXPlayerRenderSurfaceHost {
 
     FTXRenderCarrier getCurCarrier();
 
+    long getPlayerRenderMode();
+
+    float getRotation();
+
+    int getVideoWidth();
+
+    int getVideoHeight();
+
 }

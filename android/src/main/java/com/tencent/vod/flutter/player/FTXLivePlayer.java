@@ -19,6 +19,7 @@ import com.tencent.rtmp.TXLiveBase;
 import com.tencent.rtmp.TXLiveConstants;
 import com.tencent.vod.flutter.FTXEvent;
 import com.tencent.vod.flutter.FTXPIPManager;
+import com.tencent.vod.flutter.common.FTXPlayerConstants;
 import com.tencent.vod.flutter.messages.FtxMessages;
 import com.tencent.vod.flutter.messages.FtxMessages.BoolMsg;
 import com.tencent.vod.flutter.messages.FtxMessages.BoolPlayerMsg;
@@ -64,11 +65,11 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
     private boolean mIsPaused = false;
     private final FtxMessages.TXLivePlayerFlutterAPI mLiveFlutterApi;
     private final FTXRenderViewFactory mRenderViewFactory;
-    private FTXRenderView mCurRenderView;
     private final Handler mUIHandler = new Handler(Looper.getMainLooper());
     private boolean mIsMute = false;
     private int mCurrentVideoWidth = 0;
     private int mCurrentVideoHeight = 0;
+    private long mCurrentRenderMode = FTXPlayerConstants.FTXRenderMode.ADJUST_RESOLUTION;
 
     private final FTXPIPManager.PipCallback pipCallback = new FTXPIPManager.PipCallback() {
         @Override
@@ -147,7 +148,7 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
         if (mLivePlayer == null) {
             mLivePlayer = new V2TXLivePlayerImpl(mFlutterPluginBinding.getApplicationContext());
             mLivePlayer.setObserver(mObserver);
-            mLivePlayer.setRenderFillMode(V2TXLiveDef.V2TXLiveFillMode.V2TXLiveFillModeScaleFill);
+            applyRenderMode();
             if (!onlyAudio) {
                 if (null != mCurRenderView) {
                     mCurRenderView.setPlayer(this);
@@ -158,8 +159,11 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
     }
 
     int startPlayerLivePlay(String url) {
-        LiteavLog.d(TAG, "startLivePlay:");
+        LiteavLog.i(TAG, "startLivePlay:");
         if (null != mLivePlayer) {
+            if (null != mCurRenderView) {
+                mCurRenderView.setPlayer(this);
+            }
             mLivePlayer.resumeVideo();
             if (!mIsMute) {
                 mLivePlayer.resumeAudio();
@@ -173,6 +177,7 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
     }
 
     int stopPlay(boolean isNeedClearLastImg) {
+        LiteavLog.i(TAG, "called stopPlay isNeedClearLastImg:" + isNeedClearLastImg);
         int result = Uninitialized;
         if (mLivePlayer != null) {
             mLastPlayEvent = -1;
@@ -197,6 +202,7 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
     }
 
     void pausePlayer() {
+        LiteavLog.i(TAG, "called pausePlayer");
         if (mLivePlayer != null) {
             mLivePlayer.pauseVideo();
             mLivePlayer.pauseAudio();
@@ -393,7 +399,7 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
 
     @Override
     public void exitPictureInPictureMode(@NonNull PlayerMsg playerMsg) {
-        mPipManager.exitPip();
+        mPipManager.exitPipByPlayerId(getPlayerId());
     }
 
     @NonNull
@@ -461,13 +467,30 @@ public class FTXLivePlayer extends FTXLivePlayerRenderHost implements TXFlutterL
     public void setPlayerView(@NonNull Long renderViewId) {
         int viewId = renderViewId.intValue();
         FTXRenderView renderView = mRenderViewFactory.findViewById(viewId);
-        if (null != renderView) {
-            mCurRenderView = renderView;
-            renderView.setPlayer(this);
-        } else {
-            LiteavLog.e(TAG, "setPlayerView can not find renderView by id:" + viewId + ", release player's renderView");
-            mCurRenderView = null;
-            setRenderView(null);
+        if (null == renderView) {
+            LiteavLog.e(TAG, "setPlayerView can not find renderView by id:"
+                    + viewId + ", release player's renderView");
+        }
+        setUpPlayerView(renderView);
+    }
+
+    @Override
+    public void setRenderMode(@NonNull Long renderMode) {
+        if (mCurrentRenderMode != renderMode) {
+            mCurrentRenderMode = renderMode;
+            applyRenderMode();
+        }
+    }
+
+    private void applyRenderMode() {
+        if (null != mLivePlayer) {
+            if (mCurrentRenderMode == FTXPlayerConstants.FTXRenderMode.ADJUST_RESOLUTION) {
+                mLivePlayer.setRenderFillMode(V2TXLiveDef.V2TXLiveFillMode.V2TXLiveFillModeFit);
+            } else if (mCurrentRenderMode == FTXPlayerConstants.FTXRenderMode.FULL_FILL_CONTAINER) {
+                mLivePlayer.setRenderFillMode(V2TXLiveDef.V2TXLiveFillMode.V2TXLiveFillModeFill);
+            } else if (mCurrentRenderMode == FTXPlayerConstants.FTXRenderMode.SCALE_FULL_FILL_CONTAINER) {
+                mLivePlayer.setRenderFillMode(V2TXLiveDef.V2TXLiveFillMode.V2TXLiveFillModeScaleFill);
+            }
         }
     }
 

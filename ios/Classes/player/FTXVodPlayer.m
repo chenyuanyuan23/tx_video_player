@@ -16,6 +16,7 @@
 #import "FTXTextureView.h"
 #import "FTXPlayerConstants.h"
 #import "FTXPiPKit/FTXPipConstants.h"
+#import "FTXPlayerConstants.h"
 
 static const int uninitialized = -1;
 
@@ -29,6 +30,8 @@ static const int uninitialized = -1;
 @property (nonatomic, strong) FTXRenderViewFactory* renderViewFactory;
 @property (nonatomic, strong) FTXRenderView *curRenderView;
 @property (nonatomic, strong) UIView *txPipView;
+@property (nonatomic, assign) NSUInteger renderMode;
+@property (nonatomic, assign) float cacheStartTime;
 
 @end
 /**
@@ -62,6 +65,8 @@ static const int uninitialized = -1;
         self.hasEnteredPipMode = NO;
         self.restoreUI = NO;
         self.renderViewFactory = renderViewFactory;
+        self.renderMode = FULL_FILL_CONTAINER;
+        self.cacheStartTime = 0;
         SetUpTXFlutterVodPlayerApiWithSuffix([registrar messenger], self, [self.playerId stringValue]);
         self.vodFlutterApi = [[TXVodPlayerFlutterAPI alloc] initWithBinaryMessenger:[registrar messenger] messageChannelSuffix:[self.playerId stringValue]];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onApplicationTerminateClick) name:UIApplicationWillTerminateNotification object:nil];
@@ -121,6 +126,7 @@ static const int uninitialized = -1;
 
     self.txPipView = nil;
     self.curRenderView = nil;
+    self.cacheStartTime = 0;
     
     _hasEnteredPipMode = NO;
     _restoreUI = NO;
@@ -134,6 +140,7 @@ static const int uninitialized = -1;
             if (nil != self.curRenderView) {
                 [self.curRenderView setPlayer:self];
             }
+            [_txVodPlayer setRenderMode:RENDER_MODE_FILL_SCREEN];
         }
         NSMutableDictionary *dic = [[NSMutableDictionary alloc] init];
         [dic setObject:@(0xFFFFFFFF) forKey:@"fontColor"];
@@ -208,7 +215,11 @@ static const int uninitialized = -1;
 {
     if (_txVodPlayer != nil) {
         _isStoped = YES;
-        return [_txVodPlayer stopPlay];
+        BOOL result = [_txVodPlayer stopPlay];
+        if (self.cacheStartTime > 0) {
+            [self setStartTime:self.cacheStartTime];
+        }
+        return result;
     }
     [self releaseImageSprite];
     return NO;
@@ -294,6 +305,7 @@ static const int uninitialized = -1;
 - (void)setStartTime:(float)startTime
 {
     if (_txVodPlayer != nil) {
+        self.cacheStartTime = startTime;
         [_txVodPlayer setStartTime:startTime];
     }
 }
@@ -324,6 +336,10 @@ static const int uninitialized = -1;
     if(_txImageSprite) {
         _txImageSprite = nil;
     }
+}
+
+- (void)reDrawWithError:(FlutterError * _Nullable __autoreleasing *)error {
+    // do nothing
 }
 
 - (void)setPlayerImageSprite:(NSString*)urlStr withImgArray:(NSArray*)imgStrArray {
@@ -581,10 +597,17 @@ static const int uninitialized = -1;
     }
 }
 
-- (void)setRenderMode:(int)renderMode
+- (void)setRenderMode:(NSUInteger)renderMode
 {
+    self->_renderMode = renderMode;
     if(_txVodPlayer != nil) {
-        [_txVodPlayer setRenderMode:renderMode];
+        if (renderMode == ADJUST_RESOLUTION) {
+            [_txVodPlayer setRenderMode:RENDER_MODE_FILL_EDGE];
+        } else if (renderMode == FULL_FILL_CONTAINER) {
+            [_txVodPlayer setRenderMode:RENDER_MODE_FILL_SCREEN];
+        }
+    } else {
+        FTXLOGW(@"miss player when setRenderMode");
     }
 }
 
@@ -1012,7 +1035,8 @@ static const int uninitialized = -1;
     }
 }
 
-- (void)setPlayerViewRenderViewId:(NSInteger)renderViewId error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error { 
+- (void)setPlayerViewRenderViewId:(NSInteger)renderViewId error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
+    FTXLOGI(@"setPlayerView, renderViewId:%ld", renderViewId);
     FTXRenderView *renderView = [self.renderViewFactory findViewById:renderViewId];
     if (nil != renderView) {
         self.curRenderView = renderView;
@@ -1031,6 +1055,12 @@ static const int uninitialized = -1;
         } else {
             self.renderControl = nil;
         }
+    }
+}
+
+- (void)setRenderModeRenderMode:(NSInteger)renderMode error:(FlutterError * _Nullable __autoreleasing *)error {
+    if (self.renderMode != renderMode) {
+        [self setRenderMode:renderMode];
     }
 }
 

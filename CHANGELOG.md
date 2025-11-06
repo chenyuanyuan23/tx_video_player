@@ -1,4 +1,130 @@
 
+#### Version: 12.8.1 2025.10.23
+
+##### Features：
+
+- Enhance rendering compatibility.
+
+
+#### Version: 12.8.0 2025.09.19
+
+##### Features：
+
+- set Android TXLiteAVSDK to 12.8.0.19279
+- set iOS TXLiteAVSDK to 12.8.19666
+- Fix known issue
+
+
+#### Version: 12.7.4 2025.09.09
+
+##### Features：
+
+- Fix the issue of restoration failure on some Android devices with PIP
+
+
+#### Version: 12.7.3 2025.09.03
+
+##### Features：
+
+- Fix the issue of invalid renderMode.
+
+
+#### Version: 12.7.2 2025.08.29
+
+##### Features：
+
+- VOD supports the autoRotate configuration.
+- set Android TXLiteAVSDK to 12.7.0.19083
+- set iOS TXLiteAVSDK to 12.7.19324
+- Fix known issue
+
+
+#### Version: 12.7.1 2025.08.13
+
+##### Features：
+
+- Fix the issue where the Android screen has severe jagged edges in some cases.
+- Fix the issue where rendering failure errors occur when Android stops playback.
+- Fix the issue where Picture-in-Picture (PiP) restoration on Android sends an extra exit event.
+- Fix known issue
+
+#### Version: 12.7.0 2025.08.04
+
+##### Features：
+
+- set Android TXLiteAVSDK to 12.7.0.19072
+- set iOS TXLiteAVSDK to 12.7.19272
+- Fix the issue of abnormal display when restoring picture-in-picture
+- fix known issue
+
+
+#### Version: 12.6.2 2025.07.31
+
+##### Features：
+
+- set Android TXLiteAVSDK to 12.6.0.18891
+- set iOS TXLiteAVSDK to 12.6.18894
+- Fix the issue where the first frame is not displayed during pre-playback
+- Fix the issue where clearing the last frame is ineffective
+- fix known issue
+
+
+#### Version: 12.6.1 2025.06.20
+
+##### Features：
+
+- fix known issue
+
+
+#### Version: 12.6.0 2025.06.20
+
+##### Features：
+
+- set Android TXLiteAVSDK_Professional to 12.6.0.17772，tag：release_pro_v12.6.0
+- set iOS TXLiteAVSDK_Professional to 12.6.18866， tag：release_pro_v12.6.0
+
+#### Version: 12.5.1 2025.06.18
+
+##### Features：
+
+- set Android TXLiteAVSDK_Professional to 12.5.0.17576，tag：release_pro_v12.5.1
+- set iOS TXLiteAVSDK_Professional to 12.5.18393， tag：release_pro_v12.5.1
+- The `SuperPlayerPlugin` has added the `setDrmProvisionEnv` method for switching the DRM playback environment.
+- Fixed an issue where the video screen could not be restored when returning to the foreground from the background while using SurfaceView on the Android side.
+- Fix the issue where the UI component's fullscreen operation behaves unexpectedly on some older Android devices.
+
+#### Version: 12.5.0 2025.05.08
+
+##### Features：
+
+- set Android TXLiteAVSDK_Professional to 12.5.0.17567，tag：release_pro_v12.5.0
+- set iOS TXLiteAVSDK_Professional to 12.5.18359， tag：release_pro_v12.5.0
+- Added the `setRenderMode` method to the player, allowing configuration of the tiling mode for video rendering.
+- Fixed an issue on Android where the player screen would turn black after pausing, moving to the background, and then returning to the foreground.
+- Optimized the delay of the first frame rendering in the Flutter player compared to event triggers.
+- Improved the screen orientation switching logic of the `super_player_widget` component by unifying texture sharing between portrait and landscape modes, enhancing the user experience during orientation changes.
+- On iOS, Picture-in-Picture (PiP) for live streaming will automatically switch to a layer-based playback mode for iOS 15.0 and above. [Inspired by live streaming practices, this uses `contentSource` to implement custom PiP rendering, avoiding playback glitches caused by PiP window resizing.]
+- Added a simple license polling mechanism on the demo side to prevent playback failures due to prolonged network disconnections during the first launch.
+- Fixed a memory leak issue in the Android Picture-in-Picture service under certain conditions.
+- Resolved the issue where Android Picture-in-Picture resizing animations displayed a semi-transparent black shadow effect.
+- On iOS, after calling `stopPlay`, the `startTime` is no longer cleared, aligning the behavior with the Android implementation.
+
+
+#### Version: 12.4.2 2025.04.30
+
+##### Features：
+
+- Fix an issue where releasing the player would close the global Picture-in-Picture mode.
+
+
+
+#### Version: 12.4.1 2025.04.02
+
+##### Features：
+
+- Remove the method of binding texture via the controller of TXPlayerVideo
+
+
 #### Version: 12.4.0 2025.03.31
 
 ##### Features：

@@ -14,16 +14,15 @@ rootProject.allprojects {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
     compileSdkVersion rootProject.ext.compileSdkVersion
     namespace="com.tencent.vod.flutter"
 
     defaultConfig {
+        buildConfigField("String", "FLUTTER_PLAYER_VERSION", "\"${rootProject.ext.playerVersion}\"")
         minSdkVersion rootProject.ext.minSdkVersion
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
@@ -31,6 +30,6 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     // implementation rootProject.ext.liteavSdk
-    implementation 'com.chenyuanyuan23:LiteAVSDK_Player:12.4.0.17372_1'
+    implementation 'com.chenyuanyuan23:LiteAVSDK_Player:12.8.0.19279'
     implementation rootProject.ext.compat
 }

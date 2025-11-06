@@ -544,6 +544,15 @@ enum TXPlayerLiveMode {
   Smooth
 }
 
+enum TXDrmProvisionEnv {
+  // 代表使用 google COM 域名证书提供商
+  // using the Google COM domain certificate provider
+  DRM_PROVISION_ENV_COM,
+  // 代表使用 google CN 域名证书提供商
+  // using the Google CN domain certificate provider
+  DRM_PROVISION_ENV_CN
+}
+
 enum TXPlayerState {
   // Playback paused.
   // 暂停播放
@@ -939,6 +948,20 @@ enum FTXAndroidRenderViewType {
   TEXTURE_VIEW,
   SURFACE_VIEW,
   DRM_SURFACE_VIEW
+}
+
+///
+/// 画面平铺模式
+///
+/// Tiling Mode
+///
+enum FTXPlayerRenderMode {
+  /// 根据视频比例，完整展示出视频画面
+  /// Display the video content fully according to the video aspect ratio.
+  ADJUST_RESOLUTION,
+  /// 根据视频比例，填充满容器，超出部分裁剪
+  /// Fill the container completely according to the video aspect ratio, and crop the overflowing parts.
+  FULL_FILL_CONTAINER
 }
 
 // Video pre-download event callback listener.

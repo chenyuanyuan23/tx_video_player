@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.text.TextUtils;
+import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.View;
 import android.view.Window;
@@ -45,7 +46,7 @@ import com.tencent.vod.flutter.tools.TXSimpleEventBus;
 
 
 public class FlutterPipImplActivity extends Activity implements ITXVodPlayListener,
-        ServiceConnection {
+        ServiceConnection, TXSimpleEventBus.EventSubscriber {
 
     private static final String TAG = "FlutterPipImplActivity";
     private static TXPlayerHolder pipPlayerHolder;
@@ -159,7 +160,7 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
         mPipContainer = findViewById(R.id.rl_pip_container);
         if (null == pipPlayerHolder) {
             LiteavLog.e(TAG, "lack pipPlayerHolder, please check the pip argument");
-            finish();
+            destroyPipAct();
             return;
         }
         mPlayerHolder = pipPlayerHolder;
@@ -169,15 +170,18 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
             setLivePlayerListener();
         } else {
             LiteavLog.e(TAG, "lack pipPlayerHolder player, please check the pip argument");
-            finish();
+            destroyPipAct();
+            return;
         }
+        TXSimpleEventBus.getInstance().register(FTXEvent.PIP_ACTION_EXIT, this);
+        TXSimpleEventBus.getInstance().register(FTXEvent.PIP_ACTION_UPDATE, this);
         Intent intent = getIntent();
         Bundle data = intent.getBundleExtra("data");
         if (null != data) {
             PipParams params = data.getParcelable(FTXEvent.EXTRA_NAME_PARAMS);
             if (null == params) {
                 LiteavLog.e(TAG, "lack pip params,please check the argument");
-                finish();
+                destroyPipAct();
             } else {
                 mCurrentParams = params;
                 if (VERSION.SDK_INT >= VERSION_CODES.O) {
@@ -187,7 +191,6 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
                 }
             }
         }
-        handleIntent(intent);
     }
 
 
@@ -234,7 +237,7 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
         } else {
             if (isInPictureInPictureMode) {
                 sendPipEvent(FTXEvent.EVENT_PIP_MODE_ALREADY_ENTER, null);
-                showComponent();
+                setUpPipVideo();
             } else {
                 handlePipExitEvent();
             }
@@ -317,14 +320,17 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
         }
         if (null != mPlayerHolder.getVodPlayer()) {
             mPlayerHolder.getVodPlayer().setSurface(null);
+            mPlayerHolder.getVodPlayer().setPlayerView((TXCloudVideoView) null);
+            mPlayerHolder.getVodPlayer().setVodListener(null);
         }
         if (null != mPlayerHolder.getLivePlayer()) {
             mPlayerHolder.getLivePlayer().setRenderView((TextureView) null);
+            mPlayerHolder.getLivePlayer().setRenderView((SurfaceView) null);
+            mPlayerHolder.getLivePlayer().setObserver(null);
         }
         mPlayerHolder.pause();
         int codeEvent = mIsNeedToStop ? FTXEvent.EVENT_PIP_MODE_ALREADY_EXIT : FTXEvent.EVENT_PIP_MODE_RESTORE_UI;
-        sendPipEvent(codeEvent, data);
-        exitPip(codeEvent == FTXEvent.EVENT_PIP_MODE_ALREADY_EXIT);
+        exitPip(codeEvent == FTXEvent.EVENT_PIP_MODE_ALREADY_EXIT, codeEvent, data);
     }
 
     @Override
@@ -336,29 +342,46 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
     private void handleIntent(Intent intent) {
         if (intent != null) {
             String action = intent.getAction();
-            if (TextUtils.equals(action, FTXEvent.PIP_ACTION_START)) {
-                startPipVideo();
-            } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_EXIT)) {
+            handleAction(action, intent.getExtras());
+        }
+    }
+
+    private void handleAction(String action, Bundle params) {
+        if (TextUtils.equals(action, FTXEvent.PIP_ACTION_START)) {
+            startPipVideo();
+        } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_EXIT)) {
+            int playerId = -1;
+            if (null != params) {
+                playerId = params.getInt(FTXEvent.EXTRA_NAME_PLAYER_ID, -1);
+            }
+            if (playerId == -1 || playerId == mCurrentParams.getCurrentPlayerId()) {
                 mIsNeedToStop = true;
                 handlePipExitEvent();
-            } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_UPDATE)) {
-                Bundle data = intent.getBundleExtra("data");
-                if (null != data) {
-                    PipParams pipParams = data.getParcelable(FTXEvent.EXTRA_NAME_PARAMS);
-                    updatePip(pipParams);
-                }
-            } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_DO_EXIT)) {
-                overridePendingTransition(0, 0);
-                if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
-                    FlutterPipImplActivity.this.finishAndRemoveTask();
-                } else {
-                    FlutterPipImplActivity.this.finish();
-                }
-                mIsPipFinishing = false;
             } else {
-                LiteavLog.e(TAG, "unknown pip action:" + action);
+                LiteavLog.w(TAG, "close pip failed, playerId not found:" + playerId);
             }
+        } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_UPDATE)) {
+            if (null != params) {
+                PipParams pipParams = params.getParcelable(FTXEvent.EXTRA_NAME_PARAMS);
+                updatePip(pipParams);
+            }
+        } else if (TextUtils.equals(action, FTXEvent.PIP_ACTION_DO_EXIT)) {
+            destroyPipAct();
+        } else {
+            LiteavLog.e(TAG, "unknown pip action:" + action);
         }
+    }
+
+    private void destroyPipAct() {
+        overridePendingTransition(0, 0);
+        if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
+            FlutterPipImplActivity.this.finishAndRemoveTask();
+        } else {
+            FlutterPipImplActivity.this.finish();
+        }
+        mIsPipFinishing = false;
+        pipPlayerHolder = null;
+        isInPip = false;
     }
 
     private void updatePip(PipParams pipParams) {
@@ -409,7 +432,7 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
      *                         Close immediately without delay. Generally, set it to `true` to close picture-in-picture
      *                         mode and `false` to restore picture-in-picture mode.
      */
-    private void exitPip(boolean closeImmediately) {
+    private void exitPip(boolean closeImmediately, int codeEvent, Bundle data) {
         if (mIsPipFinishing) {
             return;
         }
@@ -432,29 +455,17 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
                          it can display back to the original page.
                          */
                         moveCurActToFront();
-                        overridePendingTransition(0, 0);
-                        if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
-                            FlutterPipImplActivity.this.finishAndRemoveTask();
-                        } else {
-                            FlutterPipImplActivity.this.finish();
-                        }
-                        mIsPipFinishing = false;
+                        sendPipEvent(codeEvent, data);
                     }
-                }, 800);
+                }, 500);
             } else {
-                overridePendingTransition(0, 0);
-                if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
-                    finishAndRemoveTask();
-                } else {
-                    finish();
-                }
-                mIsPipFinishing = false;
+                destroyPipAct();
+                sendPipEvent(codeEvent, data);
             }
         }
     }
 
     private void startPipVideo() {
-        attachRenderView(mVideoRenderView);
         startPlay();
     }
 
@@ -486,10 +497,14 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
         unRegisterPipBroadcast();
         if (Build.VERSION.SDK_INT >= VERSION_CODES.Q) {
             unbindService(this);
+            Intent serviceIntent = new Intent(getApplicationContext(), TXAndroid12BridgeService.class);
+            stopService(serviceIntent);
         }
+        TXSimpleEventBus.getInstance().unregisterAllType(this);
         mPlayerHolder = null;
         pipPlayerHolder = null;
         isInPip = false;
+        attachRenderView(null);
         super.onDestroy();
     }
 
@@ -576,10 +591,12 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
      * 显示组件
      * 为了防止画中画启动一瞬间的黑屏，组件一开始为隐藏状态，只有进入画中画之后才会显示组件
      */
-    private void showComponent() {
+    private void setUpPipVideo() {
         mVideoRenderView.setVisibility(View.VISIBLE);
         mVideoProgress.setVisibility(View.VISIBLE);
         mPipContainer.setBackgroundColor(Color.parseColor("#33000000"));
+        attachRenderView(mVideoRenderView);
+        startPipVideo();
     }
 
     private void controlPipPlayStatus(boolean isPlaying) {
@@ -649,5 +666,13 @@ public class FlutterPipImplActivity extends Activity implements ITXVodPlayListen
 
     @Override
     public void onServiceDisconnected(ComponentName name) {
+    }
+
+    @Override
+    public void onEvent(String eventType, Object data) {
+        if (TextUtils.equals(FTXEvent.PIP_ACTION_EXIT, eventType)
+                || TextUtils.equals(FTXEvent.PIP_ACTION_UPDATE, eventType)) {
+            handleAction(eventType, (Bundle) data);
+        }
     }
 }

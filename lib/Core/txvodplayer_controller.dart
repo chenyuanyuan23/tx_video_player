@@ -636,6 +636,22 @@ class TXVodPlayerController extends ChangeNotifier implements ValueListenable<TX
     await _vodPlayerApi.setPlayerView(renderViewId);
   }
 
+  @override
+  Future<void> setRenderMode(FTXPlayerRenderMode renderMode) async {
+    if (_isNeedDisposed) return;
+    await _initPlayer.future;
+    await _vodPlayerApi.setRenderMode(renderMode.index);
+  }
+
+  ///
+  /// only valid on Android
+  ///
+  Future<void> reDraw() async {
+    if (_isNeedDisposed) return;
+    await _initPlayer.future;
+    await _vodPlayerApi.reDraw();
+  }
+
   /// release controller
   ///
   /// 释放controller

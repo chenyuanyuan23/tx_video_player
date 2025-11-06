@@ -5,14 +5,34 @@ typedef FTXOnRenderViewCreatedListener = void Function(int viewId);
 
 class TXPlayerVideo extends StatefulWidget {
 
-  @Deprecated("recommended to use onRenderViewCreatedListener and controller.setPlayerView to bind the video surface.")
-  final TXPlayerController? controller;
   final FTXAndroidRenderViewType renderViewType;
   final FTXOnRenderViewCreatedListener? onRenderViewCreatedListener;
 
+  ///
+  /// 从 12.4.1 版本开始，移除传入 controller 的绑定纹理方式，该方式由于不可预见问题太多，所以移除。推荐使用 TXPlayerVideo
+  /// 的 onRenderViewCreatedListener 回调，在获取到 viewId 后，使用 controller#setPlayerView 进行播放器和纹理的绑定
+  ///
+  /// Starting from version 12.4.1, the method of binding textures by passing in a controller has been removed.
+  /// This method is removed due to too many unforeseen issues. It is recommended to use the `onRenderViewCreatedListener`
+  /// callback of `TXPlayerVideo`. After obtaining the `viewId`, use `controller#setPlayerView` to bind the player
+  /// and texture.
+  ///
+  /// e.g:
+  /// TXPlayerVideo(
+  ///    onRenderViewCreatedListener: (viewId) {
+  ///      /// 此处只展示了最基础的纹理和播放器的配置方式。 这里可记录下来 viewId，在多纹理之间进行切换，比如横竖屏切换场景，竖屏的画面，
+  ///      /// 要切换到横屏的画面，可以在切换到横屏之后， 拿到横屏的viewId 设置上去。回到竖屏的时候，再通过 viewId 切换回来。
+  ///      /// Only the most basic configuration methods for textures and the player are shown here.
+  ///      /// The `viewId` can be recorded here to switch between multiple textures. For example, in the scenario
+  ///      /// of switching between portrait and landscape orientations:
+  ///      /// To switch from the portrait view to the landscape view, obtain the `viewId` of the landscape view
+  ///      /// after switching to landscape orientation and set it.  When switching back to portrait orientation,
+  ///      /// switch back using the recorded `viewId`.
+  ///      _controller.setPlayerView(viewId);
+  ///    },
+  ///  )
+  ///
   TXPlayerVideo({
-    @Deprecated("recommended to use onRenderViewCreatedListener and controller.setPlayerView to bind the video surface.")
-    this.controller,
     this.onRenderViewCreatedListener,
     FTXAndroidRenderViewType? androidRenderType, Key? viewKey})
       : renderViewType = androidRenderType ?? FTXAndroidRenderViewType.TEXTURE_VIEW, super(key: viewKey);
@@ -26,66 +46,45 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
 
   int _viewId = -1;
   Completer<int> _viewIdCompleter = Completer();
+  // for force rebuild
   Key _platformViewKey = UniqueKey();
 
   @override
   void initState() {
     super.initState();
-    if (_viewIdCompleter.isCompleted) {
-      _setPlayerView(_viewId);
-    }
   }
 
   @override
   void didUpdateWidget(covariant TXPlayerVideo oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      if (_viewIdCompleter.isCompleted) {
-        setState(() {
-          _setPlayerView(_viewId);
-        });
-      } else {
-        _waitViewId();
-      }
-    } else if (oldWidget.renderViewType != widget.renderViewType) {
+   if (oldWidget.renderViewType != widget.renderViewType) {
       setState(() {
         _platformViewKey = UniqueKey();
       });
     }
-    else {
-      LogUtils.i(TAG, "met a unchanged widget refresh");
-      _waitViewId();
-    }
   }
 
-  Future<void> _waitViewId() async {
-    await _viewIdCompleter.future;
-    setState(() {
-      _setPlayerView(_viewId);
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return IgnorePointer(
         ignoring: true,
-        child: PlatformViewLink(
-            key: _platformViewKey,
-            surfaceFactory: (context, controller) {
-              return AndroidViewSurface(
-                controller: controller as AndroidViewController,
-                gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
-                hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-              );
-            },
-            onCreatePlatformView: _onCreatePlatformAndroidView,
-            viewType: _kFTXPlayerRenderViewType),
+        child: AndroidView(
+          key: _platformViewKey,
+            onPlatformViewCreated: _onCreateAndroidView,
+            viewType: _kFTXPlayerRenderViewType,
+          layoutDirection: TextDirection.ltr,
+          creationParams: {_kFTXAndroidRenderTypeKey : widget.renderViewType.index},
+          creationParamsCodec: const StandardMessageCodec(),
+
+        )
       );
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       return IgnorePointer(
         ignoring: true,
         child: UiKitView(
+            key: _platformViewKey,
             viewType: _kFTXPlayerRenderViewType,
             layoutDirection: TextDirection.ltr,
             creationParams: const {},
@@ -98,45 +97,13 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
     }
   }
 
-  PlatformViewController _onCreatePlatformAndroidView(PlatformViewCreationParams params) {
+  void _onCreateAndroidView(int id) {
     if (_viewIdCompleter.isCompleted) {
       _viewIdCompleter = Completer();
     }
-    _viewId = params.id;
-    _viewIdCompleter.complete(params.id);
-    widget.onRenderViewCreatedListener?.call(params.id);
-    _setPlayerView(params.id);
-    if (widget.renderViewType == FTXAndroidRenderViewType.DRM_SURFACE_VIEW) {
-      return PlatformViewsService.initSurfaceAndroidView(
-        id: params.id,
-        viewType: _kFTXPlayerRenderViewType,
-        layoutDirection: TextDirection.ltr,
-        creationParams: {_kFTXAndroidRenderTypeKey : widget.renderViewType.index},
-        creationParamsCodec: const StandardMessageCodec(),
-        onFocus: () {
-          params.onFocusChanged(true);
-        },
-      )
-        ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
-        ..create();
-    } else {
-      return PlatformViewsService.initAndroidView(
-        id: params.id,
-        viewType: _kFTXPlayerRenderViewType,
-        layoutDirection: TextDirection.ltr,
-        creationParams: {_kFTXAndroidRenderTypeKey : widget.renderViewType.index},
-        creationParamsCodec: const StandardMessageCodec(),
-        onFocus: () {
-          params.onFocusChanged(true);
-        },
-      )
-        ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
-        ..create();
-    }
-  }
-
-  Future<void> _setPlayerView(int viewId) async {
-    await widget.controller?.setPlayerView(viewId);
+    _viewId = id;
+    _viewIdCompleter.complete(id);
+    widget.onRenderViewCreatedListener?.call(id);
   }
 
   void _onCreateIOSView(int id) {
@@ -146,16 +113,11 @@ class TXPlayerVideoState extends State<TXPlayerVideo> {
     _viewId = id;
     _viewIdCompleter.complete(id);
     widget.onRenderViewCreatedListener?.call(id);
-    _setPlayerView(id);
   }
 
   Future<int> getViewId() async {
     await _viewIdCompleter.future;
     return _viewId;
-  }
-
-  void resetController() {
-    _waitViewId();
   }
 
   @override
