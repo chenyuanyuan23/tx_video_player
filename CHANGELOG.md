@@ -1,11 +1,4 @@
 
-#### Version: 12.8.1 2025.10.23
-
-##### Features：
-
-- Enhance rendering compatibility.
-
-
 #### Version: 12.8.0 2025.09.19
 
 ##### Features：
