@@ -2834,6 +2834,27 @@ void SetUpTXFlutterVodPlayerApiWithSuffix(id<FlutterBinaryMessenger> binaryMesse
       [channel setMessageHandler:nil];
     }
   }
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  /// Returns -1 if using platform view mode or if not available
+  /// 如果使用平台视图模式或不可用，则返回 -1
+  {
+    FlutterBasicMessageChannel *channel =
+      [[FlutterBasicMessageChannel alloc]
+        initWithName:[NSString stringWithFormat:@"%@%@", @"dev.flutter.pigeon.super_player.TXFlutterVodPlayerApi.getTextureId", messageChannelSuffix]
+        binaryMessenger:binaryMessenger
+        codec:nullGetFtxMessagesCodec()];
+    if (api) {
+      NSCAssert([api respondsToSelector:@selector(getTextureIdWithError:)], @"TXFlutterVodPlayerApi api (%@) doesn't respond to @selector(getTextureIdWithError:)", api);
+      [channel setMessageHandler:^(id _Nullable message, FlutterReply callback) {
+        FlutterError *error;
+        IntMsg *output = [api getTextureIdWithError:&error];
+        callback(wrapResult(output, error));
+      }];
+    } else {
+      [channel setMessageHandler:nil];
+    }
+  }
 }
 void SetUpTXFlutterLivePlayerApi(id<FlutterBinaryMessenger> binaryMessenger, NSObject<TXFlutterLivePlayerApi> *api) {
   SetUpTXFlutterLivePlayerApiWithSuffix(binaryMessenger, api, @"");
@@ -3308,6 +3329,27 @@ void SetUpTXFlutterLivePlayerApiWithSuffix(id<FlutterBinaryMessenger> binaryMess
         FlutterError *error;
         [api setRenderModeRenderMode:arg_renderMode error:&error];
         callback(wrapResult(nil, error));
+      }];
+    } else {
+      [channel setMessageHandler:nil];
+    }
+  }
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  /// Returns -1 if using platform view mode or if not available
+  /// 如果使用平台视图模式或不可用，则返回 -1
+  {
+    FlutterBasicMessageChannel *channel =
+      [[FlutterBasicMessageChannel alloc]
+        initWithName:[NSString stringWithFormat:@"%@%@", @"dev.flutter.pigeon.super_player.TXFlutterLivePlayerApi.getTextureId", messageChannelSuffix]
+        binaryMessenger:binaryMessenger
+        codec:nullGetFtxMessagesCodec()];
+    if (api) {
+      NSCAssert([api respondsToSelector:@selector(getTextureIdWithError:)], @"TXFlutterLivePlayerApi api (%@) doesn't respond to @selector(getTextureIdWithError:)", api);
+      [channel setMessageHandler:^(id _Nullable message, FlutterReply callback) {
+        FlutterError *error;
+        IntMsg *output = [api getTextureIdWithError:&error];
+        callback(wrapResult(output, error));
       }];
     } else {
       [channel setMessageHandler:nil];

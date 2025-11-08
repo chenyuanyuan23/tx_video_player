@@ -8,8 +8,10 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
 
   late TXFlutterLivePlayerApi _livePlayerApi;
   final Completer<int> _initPlayer;
+  final Completer<int> _createTexture = Completer(); // Texture mode support
   bool _isDisposed = false;
   bool _isNeedDisposed = false;
+  bool _onlyAudio = false;
   TXPlayerValue? _value;
   TXPlayerState? _state;
 
@@ -42,18 +44,61 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   @Deprecated("playerNetEvent will no longer return any events.")
   Stream<Map<dynamic, dynamic>> get onPlayerNetStatusBroadcast => _netStatusStreamController.stream;
 
-  TXLivePlayerController({bool? onlyAudio})
+  TXLivePlayerController({bool? onlyAudio, FTXIOSRenderMode? iosRenderMode})
       : _initPlayer = Completer() {
     _value = TXPlayerValue.uninitialized();
     _state = _value!.state;
-    _create(onlyAudio: onlyAudio);
+    _onlyAudio = onlyAudio ?? false;
+    _create(onlyAudio: onlyAudio, iosRenderMode: iosRenderMode);
   }
 
-  Future<void> _create({bool? onlyAudio}) async {
+  Future<void> _create({bool? onlyAudio, FTXIOSRenderMode? iosRenderMode}) async {
     _playerId = await SuperPlayerPlugin.createLivePlayer(onlyAudio: onlyAudio);
     _livePlayerApi = TXFlutterLivePlayerApi(messageChannelSuffix: _playerId.toString());
     TXLivePlayerFlutterAPI.setUp(this, messageChannelSuffix: _playerId.toString());
     _initPlayer.complete(_playerId);
+
+    // If iosRenderMode is specified at controller level, eagerly initialize texture
+    // 如果在 controller 级别指定了 iosRenderMode，则立即初始化纹理
+    if (iosRenderMode == FTXIOSRenderMode.TEXTURE) {
+      LogUtils.d(kTag, "🎬 Controller-level TEXTURE mode specified, initializing texture eagerly");
+      ensureTextureId(true);
+    }
+    // Otherwise, TextureId will be initialized by Widget via ensureTextureId() when needed
+  }
+
+  /// Ensure texture ID is initialized for texture rendering mode
+  /// This is called by TXPlayerVideo widget when iosRenderMode is TEXTURE
+  /// 确保纹理ID已初始化用于纹理渲染模式
+  /// 当iosRenderMode为TEXTURE时，由TXPlayerVideo widget调用
+  Future<int> ensureTextureId(bool needTexture) async {
+    // If already completed, return existing value
+    if (_createTexture.isCompleted) {
+      return _createTexture.future;
+    }
+
+    LogUtils.d(kTag, "🔍 ensureTextureId: needTexture=$needTexture, _onlyAudio=$_onlyAudio, Platform.isIOS=${Platform.isIOS}");
+
+    if (needTexture && !_onlyAudio && Platform.isIOS) {
+      try {
+        // Wait for player to be created
+        await _initPlayer.future;
+        LogUtils.d(kTag, "✅ Getting textureId from native");
+        final result = await _livePlayerApi.getTextureId();
+        final textureId = result.value ?? -1;
+        LogUtils.d(kTag, "📺 getTextureId returned: $textureId");
+        _createTexture.complete(textureId);
+        return textureId;
+      } catch (e) {
+        LogUtils.e(kTag, "❌ Failed to get texture ID: $e");
+        _createTexture.complete(-1);
+        return -1;
+      }
+    } else {
+      LogUtils.d(kTag, "⚠️ Not using texture mode, returning -1");
+      _createTexture.complete(-1);
+      return -1;
+    }
   }
 
   _changeState(TXPlayerState playerState) {
@@ -66,6 +111,11 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
     LogUtils.d(kTag, "dart SDK version:${Platform.version}");
     LogUtils.d(kTag, "liteAV SDK version:${await SuperPlayerPlugin.platformVersion}");
   }
+
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  @override
+  Future<int> get textureId => _createTexture.future;
 
   /// When setting a [LivePlayer] type player, the parameter [playType] is required.
   /// Reference: [PlayType.LIVE_RTMP] ...

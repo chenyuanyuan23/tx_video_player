@@ -3176,6 +3176,37 @@ class TXFlutterVodPlayerApi {
       return;
     }
   }
+
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  /// Returns -1 if using platform view mode or if not available
+  /// 如果使用平台视图模式或不可用，则返回 -1
+  Future<IntMsg> getTextureId() async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.super_player.TXFlutterVodPlayerApi.getTextureId$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as IntMsg?)!;
+    }
+  }
 }
 
 class TXFlutterLivePlayerApi {
@@ -3782,6 +3813,37 @@ class TXFlutterLivePlayerApi {
       );
     } else {
       return;
+    }
+  }
+
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  /// Returns -1 if using platform view mode or if not available
+  /// 如果使用平台视图模式或不可用，则返回 -1
+  Future<IntMsg> getTextureId() async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.super_player.TXFlutterLivePlayerApi.getTextureId$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as IntMsg?)!;
     }
   }
 }

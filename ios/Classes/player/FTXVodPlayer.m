@@ -43,6 +43,11 @@ static const int uninitialized = -1;
     
     id<FlutterPluginRegistrar> _registrar;
     
+    // Texture rendering support
+    id<FlutterTextureRegistry> _textureRegistry;
+    int64_t _textureId;
+    CVPixelBufferRef _Atomic _latestPixelBuffer;
+    CVPixelBufferRef _lastBuffer;
     float currentPlayTime;
     BOOL volatile isVideoFirstFrameReceived;
     NSNumber *videoWidth;
@@ -67,6 +72,11 @@ static const int uninitialized = -1;
         self.renderViewFactory = renderViewFactory;
         self.renderMode = FULL_FILL_CONTAINER;
         self.cacheStartTime = 0;
+        // Initialize texture support
+        _lastBuffer = nil;
+        _latestPixelBuffer = nil;
+        _textureId = -1;
+        _textureRegistry = nil;
         SetUpTXFlutterVodPlayerApiWithSuffix([registrar messenger], self, [self.playerId stringValue]);
         self.vodFlutterApi = [[TXVodPlayerFlutterAPI alloc] initWithBinaryMessenger:[registrar messenger] messageChannelSuffix:[self.playerId stringValue]];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onApplicationTerminateClick) name:UIApplicationWillTerminateNotification object:nil];
@@ -121,6 +131,7 @@ static const int uninitialized = -1;
     if (nil != _txVodPlayer) {
         [self setRenderView:nil];
         [_txVodPlayer removeVideoWidget];
+        _txVodPlayer.videoProcessDelegate = nil;
         _txVodPlayer = nil;
     }
 
@@ -130,17 +141,44 @@ static const int uninitialized = -1;
     
     _hasEnteredPipMode = NO;
     _restoreUI = NO;
+
+    // Clean up texture
+    if (_textureId >= 0 && _textureRegistry) {
+        [_textureRegistry unregisterTexture:_textureId];
+        _textureId = -1;
+        _textureRegistry = nil;
+    }
+
+    // Clean up pixel buffers
+    CVPixelBufferRef old = _latestPixelBuffer;
+    while (!atomic_compare_exchange_strong_explicit(&_latestPixelBuffer, &old, nil,
+                                                     memory_order_release, memory_order_relaxed)) {
+        old = _latestPixelBuffer;
+    }
+    if (old) {
+        CFRelease(old);
+    }
+
+    if (_lastBuffer) {
+        CVPixelBufferRelease(_lastBuffer);
+        _lastBuffer = nil;
+    }
+
     [self releaseImageSprite];
 }
 
 - (void)setupPlayerWithBool:(BOOL)onlyAudio
 {
     if (!onlyAudio) {
+        // Register texture for Flutter rendering
+        if (_textureId < 0) {
+            _textureRegistry = [_registrar textures];
+            int64_t tId = [_textureRegistry registerTexture:self];
+            _textureId = tId;
+        }
+        // Set video process delegate to receive frame callbacks
         if (_txVodPlayer != nil) {
-            if (nil != self.curRenderView) {
-                [self.curRenderView setPlayer:self];
-            }
-            [_txVodPlayer setRenderMode:RENDER_MODE_FILL_SCREEN];
+            [_txVodPlayer setVideoProcessDelegate:self];
         }
         NSMutableDictionary *dic = [[NSMutableDictionary alloc] init];
         [dic setObject:@(0xFFFFFFFF) forKey:@"fontColor"];
@@ -176,7 +214,7 @@ static const int uninitialized = -1;
         [_txVodPlayer setConfig:vodConfig];
         [self setupPlayerWithBool:onlyAudio];
     }
-    return [NSNumber numberWithLongLong:NO_ERROR];
+    return [NSNumber numberWithLongLong:_textureId];
 }
 
 - (void)setIsAutoPlay:(BOOL)b
@@ -452,7 +490,38 @@ static const int uninitialized = -1;
  * 说明：渲染图像的数据类型为config中设置的renderPixelFormatType
  */
 - (BOOL)onPlayerPixelBuffer:(CVPixelBufferRef)pixelBuffer {
-    return NO;
+    if(!_isTerminate && !_isStoped) {
+        if (_lastBuffer == nil) {
+            _lastBuffer = CVPixelBufferRetain(pixelBuffer);
+            CFRetain(pixelBuffer);
+        } else if (_lastBuffer != pixelBuffer) {
+            CVPixelBufferRelease(_lastBuffer);
+            _lastBuffer = CVPixelBufferRetain(pixelBuffer);
+            CFRetain(pixelBuffer);
+        }
+
+        CVPixelBufferRef newBuffer = pixelBuffer;
+        CVPixelBufferRef old = _latestPixelBuffer;
+        while (!atomic_compare_exchange_strong_explicit(&_latestPixelBuffer, &old, newBuffer, memory_order_release, memory_order_relaxed)) {
+            if (_isTerminate) {
+                break;
+            }
+            old = _latestPixelBuffer;
+        }
+
+        if (old && old != pixelBuffer) {
+            CFRelease(old);
+        }
+        if (!_isTerminate && !_isStoped && _textureRegistry && _textureId >= 0) {
+            [_textureRegistry textureFrameAvailable:_textureId];
+        }
+    }
+
+    // In texture mode, return YES to prevent SDK from rendering to its own view
+    // This is crucial for BackdropFilter to work properly with Flutter Texture
+    // 在纹理模式下返回YES，阻止SDK渲染到自己的view
+    // 这对于BackdropFilter与Flutter Texture配合工作至关重要
+    return YES;
 }
 
 /**
@@ -1062,6 +1131,40 @@ static const int uninitialized = -1;
     if (self.renderMode != renderMode) {
         [self setRenderMode:renderMode];
     }
+}
+
+#pragma mark - FlutterTexture Protocol
+
+- (CVPixelBufferRef _Nullable)copyPixelBuffer
+{
+    if (_isTerminate || _isStoped) {
+        return nil;
+    }
+
+    // Handle PiP special case
+    if (self.hasEnteredPipMode) {
+        return [self getPipImagePixelBuffer];
+    }
+
+    // Atomic swap to get latest buffer
+    CVPixelBufferRef pixelBuffer = _latestPixelBuffer;
+    while (!atomic_compare_exchange_strong_explicit(&_latestPixelBuffer, &pixelBuffer, NULL,
+                                                     memory_order_release, memory_order_relaxed)) {
+        pixelBuffer = _latestPixelBuffer;
+    }
+
+    return pixelBuffer;
+}
+
+- (int64_t)getTextureId
+{
+    return _textureId;
+}
+
+- (IntMsg *)getTextureIdWithError:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
+    IntMsg *msg = [[IntMsg alloc] init];
+    msg.value = @(_textureId);
+    return msg;
 }
 
 @end

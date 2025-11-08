@@ -3,6 +3,7 @@
 #define SUPERPLAYER_FLUTTER_IOS_CLASSES_PLAYER_FTXVODPLAYER_H_
 
 #import <Foundation/Foundation.h>
+#import <Flutter/Flutter.h>
 #import "FTXBasePlayer.h"
 #import "FTXVodPlayerDelegate.h"
 #import "FTXRenderViewFactory.h"
@@ -11,7 +12,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface FTXVodPlayer : FTXBasePlayer
+@interface FTXVodPlayer : FTXBasePlayer<FlutterTexture>
 
 @property(nonatomic, weak) id<FTXVodPlayerDelegate> delegate;
 
@@ -20,6 +21,10 @@ NS_ASSUME_NONNULL_BEGIN
                         onlyAudio:(BOOL)onlyAudio;
 
 - (void)notifyAppTerminate:(UIApplication *)application;
+
+/// Get texture ID for Flutter texture rendering
+/// 获取纹理 ID 用于 Flutter 纹理渲染
+- (int64_t)getTextureId;
 
 @end
 

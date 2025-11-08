@@ -737,6 +737,13 @@ extern void SetUpTXFlutterNativeAPIWithSuffix(id<FlutterBinaryMessenger> binaryM
 - (void)setPlayerViewRenderViewId:(NSInteger)renderViewId error:(FlutterError *_Nullable *_Nonnull)error;
 - (void)setRenderModeRenderMode:(NSInteger)renderMode error:(FlutterError *_Nullable *_Nonnull)error;
 - (void)reDrawWithError:(FlutterError *_Nullable *_Nonnull)error;
+/// Get texture ID for Flutter texture rendering (iOS only)
+/// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+/// Returns -1 if using platform view mode or if not available
+/// 如果使用平台视图模式或不可用，则返回 -1
+///
+/// @return `nil` only when `error != nil`.
+- (nullable IntMsg *)getTextureIdWithError:(FlutterError *_Nullable *_Nonnull)error;
 @end
 
 extern void SetUpTXFlutterVodPlayerApi(id<FlutterBinaryMessenger> binaryMessenger, NSObject<TXFlutterVodPlayerApi> *_Nullable api);
@@ -815,6 +822,13 @@ extern void SetUpTXFlutterVodPlayerApiWithSuffix(id<FlutterBinaryMessenger> bina
 - (nullable NSNumber *)enablePictureInPictureMsg:(BoolPlayerMsg *)msg error:(FlutterError *_Nullable *_Nonnull)error;
 - (void)setPlayerViewRenderViewId:(NSInteger)renderViewId error:(FlutterError *_Nullable *_Nonnull)error;
 - (void)setRenderModeRenderMode:(NSInteger)renderMode error:(FlutterError *_Nullable *_Nonnull)error;
+/// Get texture ID for Flutter texture rendering (iOS only)
+/// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+/// Returns -1 if using platform view mode or if not available
+/// 如果使用平台视图模式或不可用，则返回 -1
+///
+/// @return `nil` only when `error != nil`.
+- (nullable IntMsg *)getTextureIdWithError:(FlutterError *_Nullable *_Nonnull)error;
 @end
 
 extern void SetUpTXFlutterLivePlayerApi(id<FlutterBinaryMessenger> binaryMessenger, NSObject<TXFlutterLivePlayerApi> *_Nullable api);

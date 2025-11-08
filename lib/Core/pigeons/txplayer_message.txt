@@ -672,6 +672,12 @@ abstract class TXFlutterVodPlayerApi {
   void setRenderMode(int renderMode);
 
   void reDraw();
+
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  /// Returns -1 if using platform view mode or if not available
+  /// 如果使用平台视图模式或不可用，则返回 -1
+  IntMsg getTextureId();
 }
 
 @HostApi()
@@ -749,6 +755,12 @@ abstract class TXFlutterLivePlayerApi {
   void setPlayerView(int renderViewId);
 
   void setRenderMode(int renderMode);
+
+  /// Get texture ID for Flutter texture rendering (iOS only)
+  /// 获取用于 Flutter 纹理渲染的纹理 ID（仅 iOS）
+  /// Returns -1 if using platform view mode or if not available
+  /// 如果使用平台视图模式或不可用，则返回 -1
+  IntMsg getTextureId();
 }
 
 @HostApi()
