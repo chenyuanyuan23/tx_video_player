@@ -9,6 +9,7 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
   late TXFlutterLivePlayerApi _livePlayerApi;
   final Completer<int> _initPlayer;
   final Completer<int> _createTexture = Completer(); // Texture mode support
+  bool _isInitializingTexture = false; // Flag to prevent race condition
   bool _isDisposed = false;
   bool _isNeedDisposed = false;
   bool _onlyAudio = false;
@@ -62,9 +63,20 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
     // 如果在 controller 级别指定了 iosRenderMode，则立即初始化纹理
     if (iosRenderMode == FTXIOSRenderMode.TEXTURE) {
       LogUtils.d(kTag, "🎬 Controller-level TEXTURE mode specified, initializing texture eagerly");
-      ensureTextureId(true);
+      // Start initialization in background without blocking
+      _initializeTextureAsync();
     }
     // Otherwise, TextureId will be initialized by Widget via ensureTextureId() when needed
+  }
+
+  /// Initialize texture asynchronously in background
+  /// 在后台异步初始化纹理
+  void _initializeTextureAsync() async {
+    try {
+      await ensureTextureId(true);
+    } catch (e) {
+      LogUtils.e(kTag, "❌ Background texture initialization failed: $e");
+    }
   }
 
   /// Ensure texture ID is initialized for texture rendering mode
@@ -77,9 +89,18 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
       return _createTexture.future;
     }
 
+    // If another call is already initializing, wait for it
+    if (_isInitializingTexture) {
+      LogUtils.d(kTag, "⏳ Texture initialization already in progress, waiting...");
+      return _createTexture.future;
+    }
+
     LogUtils.d(kTag, "🔍 ensureTextureId: needTexture=$needTexture, _onlyAudio=$_onlyAudio, Platform.isIOS=${Platform.isIOS}");
 
     if (needTexture && !_onlyAudio && Platform.isIOS) {
+      // Set flag to prevent race condition
+      _isInitializingTexture = true;
+
       try {
         // Wait for player to be created
         await _initPlayer.future;
@@ -87,16 +108,25 @@ class TXLivePlayerController extends ChangeNotifier implements ValueListenable<T
         final result = await _livePlayerApi.getTextureId();
         final textureId = result.value ?? -1;
         LogUtils.d(kTag, "📺 getTextureId returned: $textureId");
-        _createTexture.complete(textureId);
+
+        if (!_createTexture.isCompleted) {
+          _createTexture.complete(textureId);
+        }
         return textureId;
       } catch (e) {
         LogUtils.e(kTag, "❌ Failed to get texture ID: $e");
-        _createTexture.complete(-1);
+        if (!_createTexture.isCompleted) {
+          _createTexture.complete(-1);
+        }
         return -1;
+      } finally {
+        _isInitializingTexture = false;
       }
     } else {
       LogUtils.d(kTag, "⚠️ Not using texture mode, returning -1");
-      _createTexture.complete(-1);
+      if (!_createTexture.isCompleted) {
+        _createTexture.complete(-1);
+      }
       return -1;
     }
   }
