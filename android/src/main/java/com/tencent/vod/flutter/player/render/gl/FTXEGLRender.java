@@ -411,6 +411,11 @@ public class FTXEGLRender implements SurfaceTexture.OnFrameAvailableListener {
 
         if (needReleaseDecodeSurface && mInputSurface != null) {
             mInputSurface.release();
+            mInputSurface = null;  // Set to null after release to allow recreation
+        }
+        if (needReleaseDecodeSurface && mSurfaceTexture != null) {
+            mSurfaceTexture.release();
+            mSurfaceTexture = null;  // Set to null after release to allow recreation
         }
     }
 

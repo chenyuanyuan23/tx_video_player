@@ -114,17 +114,20 @@ public class FTXSurfaceView extends SurfaceView implements FTXRenderCarrier {
 
     @Override
     public void bindPlayer(FTXPlayerRenderSurfaceHost surfaceHost) {
-        LiteavLog.i(TAG, "called bindPlayer " + surfaceHost + ", view:" + FTXSurfaceView.this.hashCode());
+        LiteavLog.i(TAG, "called bindPlayer " + surfaceHost + ", current mPlayer:" + mPlayer + ", view:" + FTXSurfaceView.this.hashCode());
         if (mPlayer == surfaceHost) {
             if (null != mPlayer) {
+                LiteavLog.i(TAG, "bindPlayer: same player, re-setting surface");
                 surfaceHost.setSurface(mRender.getInputSurface());
                 updateRenderSizeIfCan();
                 LiteavLog.w(TAG, "bindPlayer interrupt ,player: " + surfaceHost + " is equal before, view:"
                         + hashCode());
             } else {
+                LiteavLog.w(TAG, "bindPlayer: mPlayer is null but surfaceHost is same, stopping render");
                 mRender.stopRender();
             }
         } else {
+            LiteavLog.i(TAG, "bindPlayer: new player, connecting");
             mPlayer = surfaceHost;
             connectPlayer(surfaceHost);
         }
@@ -173,11 +176,17 @@ public class FTXSurfaceView extends SurfaceView implements FTXRenderCarrier {
     }
 
     private void updateHostSurface(Surface surface) {
+        LiteavLog.i(TAG, "updateHostSurface called, surface:" + surface + ", mPlayer:" + mPlayer + ", view:" + hashCode());
         if (null != mPlayer) {
-            mRender.initOpengl(surface);
-            mPlayer.setSurface(mRender.getInputSurface());
+            boolean initResult = mRender.initOpengl(surface);
+            LiteavLog.i(TAG, "initOpengl result:" + initResult);
+            Surface inputSurface = mRender.getInputSurface();
+            LiteavLog.i(TAG, "getInputSurface:" + inputSurface);
+            mPlayer.setSurface(inputSurface);
             mRender.startRender();
-            LiteavLog.i(TAG, "updateHostSurface:" + surface);
+            LiteavLog.i(TAG, "updateHostSurface completed, surface:" + surface);
+        } else {
+            LiteavLog.w(TAG, "updateHostSurface: mPlayer is null!");
         }
     }
 
@@ -186,12 +195,15 @@ public class FTXSurfaceView extends SurfaceView implements FTXRenderCarrier {
     }
 
     private void updateSurfaceTexture(Surface surface) {
+        LiteavLog.i(TAG, "updateSurfaceTexture called, old:" + mSurface + ", new:" + surface + ", view:" + hashCode());
         if (mSurface != surface) {
-            LiteavLog.v(TAG, "surfaceTexture is updated:" + surface);
+            LiteavLog.i(TAG, "Surface is updated:" + surface + ", updating host surface");
             mSurface = surface;
             // surfaceView must clear img when created, or it will show flutter ui img
             mGlSurfaceTools.clearSurface(surface);
             updateHostSurface(surface);
+        } else {
+            LiteavLog.w(TAG, "Surface NOT updated, same instance");
         }
     }
 
@@ -238,9 +250,19 @@ public class FTXSurfaceView extends SurfaceView implements FTXRenderCarrier {
 
         @Override
         public void surfaceCreated(@NonNull SurfaceHolder holder) {
-            LiteavLog.v(TAG, "onSurfaceTextureAvailable");
+            LiteavLog.i(TAG, "surfaceCreated, surface:" + holder.getSurface()
+                + ", mPlayer:" + mContainer.mPlayer
+                + ", view:" + mContainer.hashCode());
             mContainer.applySurfaceConfig(holder.getSurface(), 0, 0);
             mContainer.updateRenderSizeIfCan();
+
+            // IMPORTANT: If player was already bound before surface destroyed,
+            // we need to re-bind it to the new surface
+            if (mContainer.mPlayer != null) {
+                LiteavLog.i(TAG, "surfaceCreated: re-binding existing player to new surface");
+                mContainer.bindPlayer(mContainer.mPlayer);
+            }
+
             for (FTXCarrierSurfaceListener listener : mExternalSurfaceListeners) {
                 listener.onSurfaceTextureAvailable(mContainer.mSurface);
             }
