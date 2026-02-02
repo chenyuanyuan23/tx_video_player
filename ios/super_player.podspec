@@ -23,7 +23,7 @@ player plugin.
 
   # 自动寻找所有 xcframeworks
   tx_frameworks = 'tx_frameworks'
-  tx_frameworks_version = '12.8.0.19666'
+  tx_frameworks_version = '13.1.0.20454'
   # 添加这部分代码
   s.prepare_command = <<-CMD
   if [ ! -d #{tx_frameworks}/TXFFmpeg.xcframework ] || [ ! -d #{tx_frameworks}/TXLiteAVSDK_Player.xcframework ] || [ ! -d #{tx_frameworks}/TXSoundTouch.xcframework ]; then
