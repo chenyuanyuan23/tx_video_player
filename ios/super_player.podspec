@@ -12,13 +12,13 @@ player plugin.
   s.homepage         = 'http://example.com'
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
-  s.public_header_files = 'Classes/**/*.h'
+  s.source_files = 'super_player/Sources/super_player/**/*.{h,m}'
+  s.public_header_files = 'super_player/Sources/super_player/include/*.h'
   s.dependency 'Flutter'
   s.ios.framework = ['MobileCoreServices']
   s.platform = :ios, '12.0'
   s.static_framework = true
-  s.resources = ['Classes/TXResource/**/*']
+  s.resources = ['super_player/Sources/super_player/Resources/**/*']
 
   # 自动寻找所有 xcframeworks
   tx_frameworks = 'tx_frameworks'

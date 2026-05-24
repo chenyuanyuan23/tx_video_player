@@ -2,3 +2,5 @@
 .dart_tool/
 .packages
 pubspec.lock
+# prepare_command 下载的 TXLiteAVSDK 缓存
+ios/tx_frameworks/
