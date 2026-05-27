@@ -3,6 +3,7 @@
 #define SUPERPLAYER_FLUTTER_IOS_CLASSES_LIVE_PIP_FTXBACKPLAYER_H_
 
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <AVKit/AVKit.h>
 #import "FTXPipPlayerDelegate.h"
 

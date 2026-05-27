@@ -3,6 +3,7 @@
 #define SUPERPLAYER_FLUTTER_IOS_CLASSES_FTXLIVEPLAYER_H_
 
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import "FTXBasePlayer.h"
 #import "FTXVodPlayerDelegate.h"
 

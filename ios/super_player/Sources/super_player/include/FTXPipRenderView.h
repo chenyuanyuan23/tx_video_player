@@ -3,6 +3,7 @@
 #define SUPERPLAYER_FLUTTER_IOS_CLASSES_LIVE_PIP_FTXPIPRENDERVIEW_H_
 
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import "FTXBackPlayer.h"
 
 NS_ASSUME_NONNULL_BEGIN

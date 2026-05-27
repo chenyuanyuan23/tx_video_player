@@ -3,6 +3,7 @@
 #define SUPERPLAYER_FLUTTER_IOS_CLASSES_TOOLS_FTXIMGTOOLS_H_
 
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
