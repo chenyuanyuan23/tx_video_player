@@ -531,11 +531,18 @@ static const int CODE_ON_RECEIVE_FIRST_FRAME   = 2003;
 
 - (CVPixelBufferRef)getPipImagePixelBuffer
 {
+    // 兼容 SPM / CocoaPods：pictureInpicture 图在插件资源 bundle 内，
+    // SPM 走 SWIFTPM_MODULE_BUNDLE，CocoaPods 保持 mainBundle。
+#if SWIFT_PACKAGE
+    NSBundle *pipBundle = SWIFTPM_MODULE_BUNDLE;
+#else
+    NSBundle *pipBundle = [NSBundle mainBundle];
+#endif
     NSString *imagePath;
     if ([self isCurrentLanguageHans]) {
-        imagePath = [[NSBundle mainBundle] pathForResource:@"pictureInpicture_zh" ofType:@"jpg"];
+        imagePath = [pipBundle pathForResource:@"pictureInpicture_zh" ofType:@"jpg"];
     } else {
-        imagePath = [[NSBundle mainBundle] pathForResource:@"pictureInpicture_en" ofType:@"jpg"];
+        imagePath = [pipBundle pathForResource:@"pictureInpicture_en" ofType:@"jpg"];
     }
 
     UIImage *image = [UIImage imageWithContentsOfFile:imagePath];
