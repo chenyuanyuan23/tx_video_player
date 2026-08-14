@@ -521,7 +521,7 @@ public class FTXVodPlayer extends FTXBasePlayer implements ITXVodPlayListener,
         if (null != mVodPlayer) {
             TXPlayerDrmBuilder builder = new TXPlayerDrmBuilder(params.getLicenseUrl(), params.getPlayUrl());
             if (!TextUtils.isEmpty(params.getDeviceCertificateUrl())) {
-                builder.setProvisionUrl(params.getDeviceCertificateUrl());
+                builder.setDeviceCertificateUrl(params.getDeviceCertificateUrl());
             }
             int result = mVodPlayer.startPlayDrm(builder);
             return TXCommonUtil.intMsgWith((long) result);
