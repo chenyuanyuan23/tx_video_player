@@ -40,6 +40,6 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     // implementation rootProject.ext.liteavSdk
-    implementation 'com.chenyuanyuan23:LiteAVSDK_Player:13.4.0.20477_2'
+    implementation 'com.chenyuanyuan23:LiteAVSDK_Player:12.3.0.17115'
     implementation rootProject.ext.compat
 }
